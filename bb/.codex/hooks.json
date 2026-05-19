@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "brepl hook validate",
+            "continue": false
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "brepl hook stop"
+          },
+          {
+            "type": "command",
+            "command": "brepl hook session-end"
+          }
+        ]
+      }
+    ]
+  }
+}
