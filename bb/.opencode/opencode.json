@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "clojure": {
+      "type": "local",
+      "command": [
+        "bash",
+        "-c",
+        "echo 47888 > .nrepl-port; clojure -M:repl:repl-mcp:dev"
+      ],
+      "timeout": 60000,
+      "enabled": true
+    }
+  }
+}

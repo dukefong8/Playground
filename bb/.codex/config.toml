@@ -1,0 +1,8 @@
+[mcp_servers.clojure]
+args = [
+  "-c",
+  "echo 47888 > .nrepl-port; clojure -M:lib/core:lib/data:repl:repl-mcp",
+]
+command = "bash"
+startup_timeout_sec = 60
+enabled = false

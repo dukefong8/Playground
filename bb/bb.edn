@@ -1,6 +1,6 @@
 {:paths ["."]
  :deps {com.fulcrologic/guardrails {:mvn/version "RELEASE"}
-        vvvvalvalval/scope-capture {:mvn/version "RELEASE"}
+        metosin/malli              {:mvn/version "RELEASE"}
 
         cheshire/cheshire          {:mvn/version "RELEASE"}
         org.babashka/cli           {:mvn/version "RELEASE"}
