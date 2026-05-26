@@ -6,10 +6,10 @@
       "command": [
         "bash",
         "-c",
-        "echo 47888 > .nrepl-port; clojure -M:repl:repl-mcp:dev"
+        "echo 47888 > .nrepl-port; clojure -M:repl:repl-mcp"
       ],
       "timeout": 60000,
-      "enabled": true
+      "enabled": false
     }
   }
 }
