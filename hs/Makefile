@@ -23,7 +23,7 @@ env:
 	cabal install -w ghc-$(GHC) --allow-newer --enable-documentation \
 		--package-env . --lib \
 		base relude containers stm-containers text vector template-haskell \
-		aeson aeson-optics generic-data optics safe-wild-cards \
+		aeson aeson-optics generic-data optics safe-wild-cards witch \
 		bluefin co-log ki io-classes io-sim nothunks strict-wrapper \
 		hasql hasql-th hasql-pool hasql-transaction \
 		http-api-data http-media http-types ihp-hsx lucid2 \
