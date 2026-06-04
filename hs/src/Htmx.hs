@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes       #-}
 module Htmx (hsx, module Lucid) where
 
 import Data.Set qualified as Set
@@ -12,7 +11,35 @@ hsx :: QuasiQuoter
 hsx = customHsx
     (HsxSettings
         { checkMarkup = True
-        , additionalTagNames = Set.empty
+        , additionalTagNames = Set.fromList
+            [ "ty-button"
+            , "ty-calendar"
+            , "ty-calendar-month"
+            , "ty-calendar-navigation"
+            , "ty-checkbox"
+            , "ty-copy"
+            , "ty-date-picker"
+            , "ty-dropdown"
+            , "ty-file-upload"
+            , "ty-icon"
+            , "ty-input"
+            , "ty-modal"
+            , "ty-multiselect"
+            , "ty-option"
+            , "ty-popup"
+            , "ty-radio"
+            , "ty-radio-group"
+            , "ty-resize-observer"
+            , "ty-scroll-container"
+            , "ty-step"
+            , "ty-switch"
+            , "ty-tab"
+            , "ty-tabs"
+            , "ty-tag"
+            , "ty-textarea"
+            , "ty-tooltip"
+            , "ty-wizard"
+            ]
         , additionalAttributeNames = Set.fromList
             [ "hx-action"
             , "hx-boost"
@@ -44,6 +71,8 @@ hsx = customHsx
             , "hx-trigger"
             , "hx-validate"
             , "hx-vals"
+            , "appearance"
+            , "flavor"
             ]
         }
     )

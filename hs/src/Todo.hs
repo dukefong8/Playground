@@ -281,13 +281,13 @@ listSwap :: Text
 listSwap = "outerMorph"
 
 searchInputInclude :: Text
-searchInputInclude = "#todo-input:not(:invalid)"
+searchInputInclude = "#todo-title-value"
 
 listStateInclude :: Text
 listStateInclude = "#todo-list-form, " <> searchInputInclude
 
 addFormStateInclude :: Text
-addFormStateInclude = "#todo-list-form [name='filter'], #todo-input"
+addFormStateInclude = "#todo-list-form [name='filter'], #todo-title-value"
 
 runDbOr500 :: Pool -> Session a -> Handler a
 runDbOr500 pool session = do
@@ -467,43 +467,51 @@ updateTodoTitleSession id' title' = statement (title', id')
 
 todoPage :: [Todo] -> Text -> Html ()
 todoPage items filterBy = pageShell [hsx|
-  <article>
-    <h1>Todos</h1>
-    {todoAddForm}
-    <nav>
-      <ul>
-        <li><a href="#" hx-get="/todos/list?filter=all" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>All</a></li>
-        <li><a href="#" hx-get="/todos/list?filter=active" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>Active</a></li>
-        <li><a href="#" hx-get="/todos/list?filter=completed" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>Completed</a></li>
-      </ul>
-    </nav>
+  <section class="todoapp">
+    <header class="header">
+      <h1>todos</h1>
+      {todoAddForm}
+    </header>
     {todoListSection items "" filterBy}
-  </article>
+    <p class="info-hint">Double-click to edit, Enter to add</p>
+  </section>
 |]
 
 todoAddForm :: Html ()
 todoAddForm = [hsx|
-  <form id="add-form" hx-post="/todos" hx-target="#add-form" hx-swap="outerHTML" hx-include="#todo-list-form [name='filter']">
-    <fieldset role="group">
-      <input id="todo-input" name="title" placeholder="What needs to be done?" autocomplete="off" required autofocus
-             hx-get="/todos/list" hx-trigger="input changed delay:500ms"
-             hx-include={addFormStateInclude}
-             hx-target="#todo-list" hx-swap={listSwap} hx-sync="closest form:abort">
-      <button type="submit">Add</button>
-    </fieldset>
+  <form id="add-form">
+    <input type="hidden" id="todo-title-value" name="title" value="">
+    <ty-input id="todo-input" class="new-todo" placeholder="What needs to be done?" autocomplete="off" required autofocus
+              oninput="document.getElementById('todo-title-value').value = event.detail.rawValue"
+              onkeydown="if (event.key === 'Enter') { event.preventDefault(); document.getElementById('todo-add-button').click(); }"
+              hx-get="/todos/list" hx-trigger="input delay:500ms"
+              hx-include={addFormStateInclude}
+              hx-target="#todo-list" hx-swap={listSwap} hx-sync="closest form:abort"></ty-input>
+    <ty-button id="todo-add-button" class="todo-submit" type="button" hx-post="/todos" hx-target="#add-form" hx-swap="outerHTML" hx-include={addFormStateInclude}>Add</ty-button>
   </form>
 |]
 
 todoEditForm :: Todo -> Html ()
 todoEditForm todo = [hsx|
-  <li style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color);"
-      id={"todo-item-" <> show todo.id :: Text}>
-    <form hx-put={"/todos/" <> show todo.id :: Text} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="width: 100%; display: flex; margin-bottom: 0;">
-      <input type="text" name="edit-title" value={todo.title} required autofocus style="flex: 1; margin-bottom: 0;">
-      <button type="submit" class="outline" style="margin-left: 0.5rem; width: auto; padding: 0.25rem 0.5rem; margin-bottom: 0;">Save</button>
+  <li class="editing" id={"todo-item-" <> show todo.id :: Text}>
+    <form class="todo-edit-form">
+      <input type="hidden" id={editValueId} name="title" value={todo.title}>
+      <ty-input id={editInputId} class="edit" type="text" value={todo.title} required autofocus
+                oninput={editOnInput}
+                onkeydown={editOnKeydown}></ty-input>
+      <ty-button id={editSaveId} class="todo-submit" type="button" hx-put={"/todos/" <> show todo.id :: Text} hx-include={updateStateInclude} hx-target="#todo-list" hx-swap={listSwap}>Save</ty-button>
     </form>
   </li>
 |]
+  where
+    editInputId = "edit-input-" <> show todo.id :: Text
+    editValueId = "edit-title-value-" <> show todo.id :: Text
+    editSaveId = "edit-save-" <> show todo.id :: Text
+    updateStateInclude = "#" <> editValueId <> ", " <> listStateInclude :: Text
+    editOnInput =
+      "document.getElementById('" <> editValueId <> "').value = event.detail.rawValue" :: Text
+    editOnKeydown =
+      "if (event.key === 'Enter') { event.preventDefault(); document.getElementById('" <> editSaveId <> "').click(); }" :: Text
 
 todoListSection :: [Todo] -> Text -> Text -> Html ()
 todoListSection items searchQ filterBy = todoListSectionHighlighted items searchQ filterBy Nothing
@@ -521,11 +529,18 @@ todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId oob =
     todoListForm = [hsx|
     <form id="todo-list-form">
       <input type="hidden" name="filter" value={filterBy}>
-      <ul style="list-style: none; padding: 0;">
-        {mapM_ (todoItemHighlighted highlightedTodoId) matched}
-      </ul>
-      <footer style="display: flex; justify-content: space-between; align-items: center;">
-        <small>{activeCountText}</small>
+      <section class="main">
+        <ul class="todo-list">
+          {mapM_ (todoItemHighlighted highlightedTodoId) matched}
+        </ul>
+      </section>
+      <footer class="footer">
+        <span class="todo-count"><strong>{activeCountNumber}</strong> {activeCountLabel}</span>
+        <ul class="filters">
+          {filterLink "all" "All"}
+          {filterLink "active" "Active"}
+          {filterLink "completed" "Completed"}
+        </ul>
         {clearButton}
       </footer>
     </form>
@@ -536,19 +551,31 @@ todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId oob =
       "completed" -> filter (.completed) searched
       _           -> searched
     activeCount = length $ filter (not . (.completed)) items
-    activeCountText :: Text
-    activeCountText = show activeCount <> " item" <> (if activeCount == 1 then "" else "s") <> " left"
+    activeCountNumber :: Text
+    activeCountNumber = show activeCount
+    activeCountLabel :: Text
+    activeCountLabel = "item" <> (if activeCount == 1 then "" else "s") <> " left"
     completedCount = length $ filter (.completed) items
     completedCountText :: Text
     completedCountText = show completedCount
     clearButton :: Html ()
     clearButton
       | completedCount > 0 = [hsx|
-          <button class="outline" hx-post="/todos/clear" hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap}>
+          <ty-button class="clear-completed" type="button" hx-post="/todos/clear" hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap}>
             Clear completed ({completedCountText})
-          </button>
+          </ty-button>
         |]
       | otherwise = mempty
+    filterLink :: Text -> Text -> Html ()
+    filterLink filterName label = [hsx|
+      <li><a class={selectedClass} href="#" hx-get={filterPath} hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>{label}</a></li>
+    |]
+      where
+        filterPath = "/todos/list?filter=" <> filterName :: Text
+        selectedClass :: Text
+        selectedClass
+          | filterBy == filterName = "selected"
+          | otherwise = ""
 
 todoMatchesSearch :: Text -> Todo -> Bool
 todoMatchesSearch searchQ todo =
@@ -572,15 +599,12 @@ todoItem = todoItemHighlighted Nothing
 
 todoItemHighlighted :: Maybe Int64 -> Todo -> Html ()
 todoItemHighlighted highlightedTodoId todo = [hsx|
-  <li style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color);"
-      class={classes}
-      id={"todo-item-" <> show todo.id :: Text}>
-    {completed}
-    {titleHtml}
-    <button class="outline secondary" hx-delete={deletePath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} hx-confirm="Delete this todo?"
-            style="margin-left: auto; width: auto; padding: 0.25rem 0.5rem; margin-bottom: 0;">
-      ✕
-    </button>
+  <li class={classes} id={"todo-item-" <> show todo.id :: Text}>
+    <div class="view">
+      {completed}
+      {titleHtml}
+      <ty-button class="destroy" type="button" aria-label="Delete" hx-delete={deletePath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} hx-confirm="Delete this todo?"></ty-button>
+    </div>
   </li>
 |]
   where
@@ -589,13 +613,13 @@ todoItemHighlighted highlightedTodoId todo = [hsx|
     editPath   = "/todos/" <> show todo.id <> "/edit" :: Text
     classes :: Text
     classes
+      | todo.completed && Just todo.id == highlightedTodoId = "completed todo-highlight"
+      | todo.completed = "completed"
       | Just todo.id == highlightedTodoId = "todo-highlight"
       | otherwise = ""
     completed :: Html ()
     completed
-      | todo.completed = [hsx|<input type="checkbox" checked hx-patch={patchPath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="margin-bottom: 0;">|]
-      | otherwise      = [hsx|<input type="checkbox" hx-patch={patchPath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="margin-bottom: 0;">|]
+      | todo.completed = [hsx|<ty-checkbox class="toggle" checked hx-patch={patchPath} hx-trigger="change" hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap}></ty-checkbox>|]
+      | otherwise      = [hsx|<ty-checkbox class="toggle" hx-patch={patchPath} hx-trigger="change" hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap}></ty-checkbox>|]
     titleHtml :: Html ()
-    titleHtml
-      | todo.completed = [hsx|<s style="opacity: 0.5;" hx-get={editPath} hx-trigger="dblclick" hx-target={"#todo-item-" <> show todo.id :: Text} hx-swap={listSwap}>{todo.title}</s>|]
-      | otherwise      = [hsx|<span hx-get={editPath} hx-trigger="dblclick" hx-target={"#todo-item-" <> show todo.id :: Text} hx-swap={listSwap}>{todo.title}</span>|]
+    titleHtml = [hsx|<label hx-get={editPath} hx-trigger="dblclick" hx-target={"#todo-item-" <> show todo.id :: Text} hx-swap={listSwap}>{todo.title}</label>|]
