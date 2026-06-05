@@ -1,11 +1,8 @@
-(babashka.pods/load-pod 'replikativ/datahike "0.8.1680")
-
 (ns iam-datahike
-  (:require [babashka.cli :as cli]
-            [cheshire.core :as json]
+  (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [datahike.pod :as d]))
+            [datahike.api :as d]))
 
 (def schema
   {:arn/partition
@@ -22,6 +19,7 @@
 
    :arn/account-id
    {:db/valueType :db.type/string
+
     :db/cardinality :db.cardinality/one}
 
    :arn/resource
@@ -436,6 +434,51 @@
    {:db/valueType :db.type/ref
     :db/cardinality :db.cardinality/many}})
 
+(defn- cli-format-opts
+  [{:keys [spec order]}]
+  (let [keys-in-order (or order (keys spec))]
+    (->> keys-in-order
+         (keep (fn [k]
+                 (when-let [{:keys [ref desc alias]} (get spec k)]
+                   (str "  "
+                        (when alias (str "-" (name alias) ", "))
+                        "--" (name k)
+                        (when ref (str " " ref))
+                        (when desc (str "  " desc)))))))
+         (str/join "\n")))
+
+(defn- parse-cli-args
+  [spec args]
+  (loop [opts {} [arg & more] args]
+    (cond
+      (nil? arg) opts
+      (not (str/starts-with? arg "--"))
+      (throw (ex-info (str "Unexpected argument " arg) {:args args}))
+      :else
+      (let [k (keyword (subs arg 2))
+            {:keys [coerce]} (get spec k)
+            [raw-value & tail] more]
+        (cond
+          (= coerce :boolean)
+          (recur (assoc opts k true) more)
+
+          (nil? raw-value)
+          (throw (ex-info (str "Missing value for " arg) {:args args}))
+
+          :else
+          (recur (assoc opts k raw-value) tail))))))
+
+(defn- cli-dispatch
+  [dispatch-table args {:keys [spec]}]
+  (let [[cmd & cli-args] args
+        opts (parse-cli-args spec cli-args)
+        handler (some (fn [{:keys [cmds] :as entry}]
+                        (when (= cmd (first cmds)) entry))
+                      dispatch-table)
+        fallback (some #(when (empty? (:cmds %)) %) dispatch-table)]
+    (if-let [{f :fn} (or handler fallback)]
+      (f {:cmd cmd :opts opts :args cli-args})
+      (throw (ex-info (str "Unknown command " cmd) {:args args :cmd cmd})))))
 (defn schema-tx
   []
   (mapv (fn [[ident attr]]
@@ -1128,6 +1171,20 @@
       :service-resource/service [:service/key service-prefix]
       :service-resource/arn-format (vec (ensure-vector (:ARNFormats resource)))})))
 
+(defn service-reference-resources
+  [actions resources]
+  (let [declared (vec resources)
+        seen (into #{} (keep :Name) declared)]
+    (first
+     (reduce (fn [[acc names] resource]
+               (let [resource-name (:Name resource)]
+                 (if (or (nil? resource-name) (contains? names resource-name))
+                   [acc names]
+                   [(conj acc {:Name resource-name}) (conj names resource-name)])))
+             [declared seen]
+             (mapcat #(ensure-vector (:Resources %)) actions)))))
+
+
 (defn service-action-entity
   [service-prefix action]
   (let [action-name (:Name action)]
@@ -1148,7 +1205,9 @@
   (let [v (parse-jsonish json-value)
         service-prefix (service-key v)
         actions (ensure-vector (:Actions v))
-        resources (ensure-vector (or (:Resources v) (:ResourceTypes v)))
+        resources (service-reference-resources
+                   actions
+                   (ensure-vector (or (:Resources v) (:ResourceTypes v))))
         conditions (ensure-vector (:ConditionKeys v))]
     [[(clean-entity
        {:service/key service-prefix
@@ -1996,7 +2055,7 @@
        "  bb -m iam-datahike batch-load-config --db DB --file rows.jsonl\n"
        "  bb -m iam-datahike retract-source --db DB --source-path rows.jsonl\n"
        "  bb -m iam-datahike stats --db DB\n\n"
-       (cli/format-opts {:spec cli-spec
+       (cli-format-opts {:spec cli-spec
                          :order [:db :file :policy-arn :policy-name :version-id
                                  :default :source-url :source-path :resource-type :dir :help]})))
 
@@ -2055,7 +2114,7 @@
 (defn -main
   [& args]
   (try
-    (cli/dispatch dispatch-table args {:spec cli-spec})
+    (cli-dispatch dispatch-table args {:spec cli-spec})
     (catch clojure.lang.ExceptionInfo e
       (binding [*out* *err*]
         (println (ex-message e))

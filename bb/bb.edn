@@ -1,7 +1,8 @@
 {:paths ["."]
  :deps {com.fulcrologic/guardrails {:mvn/version "RELEASE"}
         com.github.gnl/playback    {:mvn/version "RELEASE"}
-        metosin/malli              {:mvn/version "RELEASE"}
+        metosin/malli              {:mvn/version "RELEASE"
+                                    :execlusion [org.clojure/async]}
 
         cheshire/cheshire          {:mvn/version "RELEASE"}
         org.babashka/cli           {:mvn/version "RELEASE"}
