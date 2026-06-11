@@ -22,12 +22,15 @@ module Todo
 import Data.Aeson
 import Data.Text qualified as T
 import Data.Vector qualified as V
+import GHC.Stack (HasCallStack, withFrozenCallStack)
 import Prelude hiding (Handler, id)
 
 import Database
 import Hasql.TH
 import Htmx
 import Http
+
+import Colog (LoggerT, Message, cmap, fmtMessage, logInfo, logTextStdout, usingLoggerT)
 import Servant.API
 import Servant.Server
 import Servant.Server.Generic (AsServer)
@@ -249,9 +252,6 @@ data TodoItemAPI mode = TodoItemAPI
 
 type TodoRoutes = NamedRoutes TodoAPI
 
-todoAPI :: Proxy TodoRoutes
-todoAPI = Proxy
-
 todoServer :: Pool -> TodoAPI AsServer
 todoServer pool =
   TodoAPI
@@ -289,14 +289,22 @@ listStateInclude = "#todo-list-form, " <> searchInputInclude
 addFormStateInclude :: Text
 addFormStateInclude = "#todo-list-form [name='filter'], #todo-title-value"
 
+
 runDbOr500 :: Pool -> Session a -> Handler a
 runDbOr500 pool session = do
   res <- liftIO $ runDb pool session
   case res of
     Left err -> throwServerError err500
-      { errBody = renderBS [hsx|<div>Database Error: {T.pack (show err)}</div>|]
+      { errBody = renderBS [hsx|<div>Database Error: {T.show err}</div>|]
       }
     Right a -> pure a
+
+logger :: MonadIO m => LoggerT Message m a -> m a
+logger = usingLoggerT $ cmap fmtMessage logTextStdout
+
+logInfoH :: HasCallStack => Text -> Handler ()
+logInfoH msg =
+  withFrozenCallStack $ logger $ logInfo msg
 
 getTodosSession :: Session [Todo]
 getTodosSession = do
@@ -307,25 +315,32 @@ getTodosSession = do
 
 getTodosPage :: Pool -> Maybe Text -> Maybe Text -> Handler TodosView
 getTodosPage pool filter_ search_ = do
+  logInfoH $ "GET /todos page filter=" <> filterText filter_ <> " search=" <> searchText search_
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB todos page todos=" <> T.show items
   pure $ TodosView items (filterText filter_) (searchText search_)
 
 getTodoListPartial :: Pool -> Maybe Text -> Maybe Text -> Handler TodoListView
 getTodoListPartial pool filter_ search_ = do
+  logInfoH $ "GET /todos/list filter=" <> filterText filter_ <> " search=" <> searchText search_
   items   <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB todos list todos=" <> T.show items
   pure $ TodoListView items (filterText filter_) (searchText search_) Nothing False
 
 addTodo :: Pool -> AddTodoRequest -> Handler TodoMutationView
 addTodo pool request = do
   let normalizedTitle = normalizeTitle request.addTitle
+  logInfoH $ "POST /todos add title=" <> normalizedTitle
   isDuplicate <- runDbOr500 pool (todoTitleExistsSession normalizedTitle)
   duplicateTodo <-
     if isDuplicate
       then runDbOr500 pool (getTodoByTitleSession normalizedTitle)
       else pure Nothing
+  let addedAny = not (T.null normalizedTitle) && not isDuplicate
   unless (T.null normalizedTitle || isDuplicate) $
     runDbOr500 pool (addTodoSession normalizedTitle)
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB add added=" <> T.show addedAny <> " duplicateTodo=" <> T.show duplicateTodo <> " todos=" <> T.show items
   pure TodoMutationView
     { todos = items
     , filterBy = stateFilterText request.addState
@@ -336,25 +351,33 @@ addTodo pool request = do
 
 toggleTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
 toggleTodo pool todoId listState = do
+  logInfoH $ "PATCH /todos/" <> T.pack (show todoId) <> " toggle"
   runDbOr500 pool (toggleTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB toggle todos=" <> T.show items
   pure $ mutationView TodoToggled listState items Nothing
 
 deleteTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
 deleteTodo pool todoId listState = do
+  logInfoH $ "DELETE /todos/" <> T.pack (show todoId)
   runDbOr500 pool (deleteTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB delete todos=" <> T.show items
   pure $ mutationView TodoDeleted listState items Nothing
 
 clearCompleted :: Pool -> TodoListState -> Handler TodoMutationView
 clearCompleted pool listState = do
+  logInfoH "POST /todos/clear"
   runDbOr500 pool clearCompletedSession
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB clear todos=" <> T.show items
   pure $ mutationView TodoCleared listState items Nothing
 
 editTodoForm :: Pool -> Int64 -> Handler TodoEditView
 editTodoForm pool todoId = do
+  logInfoH $ "GET /todos/" <> T.pack (show todoId) <> "/edit"
   mTodo <- runDbOr500 pool (getTodoSession todoId)
+  logInfoH $ "DB edit todo=" <> T.show mTodo
   case mTodo of
     Just todo -> pure $ TodoEditView todo
     Nothing   -> throwServerError err404 { errBody = "Todo not found" }
@@ -363,10 +386,13 @@ updateTodo :: Pool -> Int64 -> UpdateTodoRequest -> Handler TodoMutationView
 updateTodo pool todoId request = do
   let title' = request.updateTitle
   let normalizedTitle = normalizeTitle title'
+  logInfoH $ "PUT /todos/" <> T.pack (show todoId) <> " title=" <> normalizedTitle
   isDuplicate <- runDbOr500 pool (todoTitleExistsExceptSession todoId normalizedTitle)
+  let updated = not (T.null normalizedTitle) && not isDuplicate
   unless (T.null normalizedTitle || isDuplicate) $
     runDbOr500 pool (updateTodoTitleSession todoId normalizedTitle)
   items <- runDbOr500 pool getTodosSession
+  logInfoH $ "DB update updated=" <> T.show updated <> " todos=" <> T.show items
   pure $ mutationView
     (if isDuplicate then TodoUpdateDuplicate else TodoUpdated)
     request.updateState

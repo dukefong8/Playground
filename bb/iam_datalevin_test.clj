@@ -8,7 +8,7 @@
             [clojure.test.check :as tc]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [iam-datalog :as iam]
+            [iam-datalevin :as iam]
             [pod.huahaiy.datalevin :as d])
   (:import [java.nio.charset StandardCharsets]
            [java.security MessageDigest]))
@@ -75,7 +75,7 @@
 
 (defn bbx-stats
   [db-path]
-  (-> (bbx-json! "iam-datalog/stats!" "--db" db-path)
+  (-> (bbx-json! "iam-datalevin/stats!" "--db" db-path)
       :results
       first))
 
@@ -122,7 +122,7 @@
 
 (defn load-sample-via-bbx!
   [db-path file-name]
-  (bbx! "iam-datalog/load-config!" "--db" db-path (sample-path file-name)))
+  (bbx! "iam-datalevin/load-config!" "--db" db-path (sample-path file-name)))
 
 (defn stats-after-each-bbx-load!
   [db-path file-names]
@@ -404,8 +404,8 @@
   (let [db-path (temp-db-path)]
     (try
       (seed-admin-chain-db! db-path)
-      (let [unscoped-report (bbx-json! "iam-datalog/admin-role-chain-paths!" "--db" db-path "--max-depth" "3")
-            report (bbx-json! "iam-datalog/admin-role-chain-paths!"
+      (let [unscoped-report (bbx-json! "iam-datalevin/admin-role-chain-paths!" "--db" db-path "--max-depth" "3")
+            report (bbx-json! "iam-datalevin/admin-role-chain-paths!"
                               "--db" db-path
                               "--max-depth" "3"
                               "--account" "123456789012")
@@ -439,8 +439,8 @@
   (let [db-path (temp-db-path)]
     (try
       (seed-admin-chain-db! db-path)
-      (let [unscoped-report (bbx-json! "iam-datalog/admin-pass-role-paths!" "--db" db-path)
-            report (bbx-json! "iam-datalog/admin-pass-role-paths!"
+      (let [unscoped-report (bbx-json! "iam-datalevin/admin-pass-role-paths!" "--db" db-path)
+            report (bbx-json! "iam-datalevin/admin-pass-role-paths!"
                               "--db" db-path
                               "--account" "123456789012")
             ;; AdminRole's `*`/`*` admin statement also covers iam:PassRole
@@ -474,7 +474,7 @@
   (let [db-path (temp-db-path)]
     (try
       (seed-admin-chain-db! db-path)
-      (let [report (bbx-json! "iam-datalog/validate-admin-path-entities!"
+      (let [report (bbx-json! "iam-datalevin/validate-admin-path-entities!"
                                "--db" db-path
                                "--max-depth" "3"
                                "--account" "123456789012")
@@ -539,7 +539,7 @@
 
 ;; ---------------------------------------------------------------------------
 ;; Regression fingerprinting (for refactor safety; see PLAN.md "Regression Test
-;; Plan"). Lives here rather than in iam-datalog so production code stays slim.
+;; Plan"). Lives here rather than in iam-datalevin so production code stays slim.
 
 (defn- sha256-hex
   [^String s]
@@ -717,7 +717,7 @@
   "Logical-stats shape used by CRDT loader properties. Robust to physical
   storage differences."
   [db-path]
-  (let [env (json/parse-string (bbx! "iam-datalog/stats!" "--db" db-path) true)
+  (let [env (json/parse-string (bbx! "iam-datalevin/stats!" "--db" db-path) true)
         s (-> env :results first)]
     {:by-type (into (sorted-map)
                     (map (juxt :value :count))
