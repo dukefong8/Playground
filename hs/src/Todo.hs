@@ -22,7 +22,6 @@ module Todo
 import Data.Aeson
 import Data.Text qualified as T
 import Data.Vector qualified as V
-import GHC.Stack (HasCallStack, withFrozenCallStack)
 import Prelude hiding (Handler, id)
 
 import Database
@@ -278,7 +277,7 @@ normalizeTitleKey :: Text -> Text
 normalizeTitleKey = T.toCaseFold . normalizeTitle
 
 listSwap :: Text
-listSwap = "outerMorph"
+listSwap = "outerHTML"
 
 searchInputInclude :: Text
 searchInputInclude = "#todo-input:not(:invalid)"
