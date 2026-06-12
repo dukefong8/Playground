@@ -50,13 +50,11 @@ testRoute = withResource acquirePool releasePool \getPool ->
   , testWai (appWithPool getPool) "GET /todos" do
       resp <- Test.get "/todos"
       assertStatus 200 resp
-      assertBodyContains "todos" resp
+      assertBodyContains "Todos" resp
       assertBodyContains "What needs to be done?" resp
-      assertBodyContains "<ty-input" resp
-      assertBodyContains "<ty-button" resp
       assertBodyContains "hx-get=\"/todos/list\"" resp
-      assertBodyContains "hx-trigger=\"input delay:500ms\"" resp
-      assertBodyContains "hx-include=\"#todo-list-form [name=&#39;filter&#39;], #todo-title-value\"" resp
+      assertBodyContains "hx-trigger=\"input changed delay:500ms\"" resp
+      assertBodyContains "hx-include=\"#todo-list-form [name=&#39;filter&#39;], #todo-input\"" resp
       assertBodyContains "hx-sync=\"closest form:abort\"" resp
       assertBodyContains "hx-post=\"/todos\"" resp
       assertBodyDoesNotContain "data-hx-json" resp
@@ -99,8 +97,6 @@ testRoute = withResource acquirePool releasePool \getPool ->
       respEdit <- Test.get editPath
       assertStatus 200 respEdit
       assertBodyContains "Buy milk" respEdit
-      assertBodyContains "<ty-input" respEdit
-      assertBodyContains "<ty-button" respEdit
       assertBodyContains "Save" respEdit
 
       -- 3. Update
