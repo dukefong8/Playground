@@ -184,6 +184,8 @@ data TodoMutationView = TodoMutationView
   , searchTitle       :: Text
   , mutation          :: TodoMutationStatus
   , highlightedTodoId :: Maybe Int64
+  , editingTodoId     :: Maybe Int64
+  , editingTitle      :: Maybe Text
   } deriving (Eq, Show)
 
 instance ToJSON TodoMutationView where
@@ -194,20 +196,31 @@ instance ToJSON TodoMutationView where
       , "title" .= mutationResult.searchTitle
       , "mutation" .= mutationResult.mutation
       , "highlightedTodoId" .= mutationResult.highlightedTodoId
+      , "editingTodoId" .= mutationResult.editingTodoId
+      , "editingTitle" .= mutationResult.editingTitle
       ]
 
 instance MimeRender HTML TodoMutationView where
   mimeRender _ mutationResult = renderBS case mutationResult.mutation of
-    TodoCreated    -> addResponseHtml
-    TodoDuplicate  -> addResponseHtml
-    TodoEmptyTitle -> addResponseHtml
-    _              -> todoListHtml
+    TodoCreated         -> addResponseHtml
+    TodoDuplicate       -> addResponseHtml
+    TodoEmptyTitle      -> addResponseHtml
+    TodoUpdated         -> todoListHtml >> focusTodoInputScript
+    TodoUpdateDuplicate -> todoListHtml >> maybe mempty focusEditInputScript mutationResult.editingTodoId
+    _                   -> todoListHtml
     where
       addResponseHtml = do
         todoAddForm
         todoListSectionHighlightedOob mutationResult.todos "" mutationResult.filterBy mutationResult.highlightedTodoId True
       todoListHtml =
-        todoListSection mutationResult.todos mutationResult.searchTitle mutationResult.filterBy
+        todoListSectionWithOptions
+          mutationResult.todos
+          mutationResult.searchTitle
+          mutationResult.filterBy
+          mutationResult.highlightedTodoId
+          False
+          mutationResult.editingTodoId
+          mutationResult.editingTitle
 
 data TodoAPI mode = TodoAPI
   { page
@@ -277,7 +290,7 @@ normalizeTitleKey :: Text -> Text
 normalizeTitleKey = T.toCaseFold . normalizeTitle
 
 listSwap :: Text
-listSwap = "outerHTML"
+listSwap = "outerMorph"
 
 searchInputInclude :: Text
 searchInputInclude = "#todo-input:not(:invalid)"
@@ -285,8 +298,8 @@ searchInputInclude = "#todo-input:not(:invalid)"
 listStateInclude :: Text
 listStateInclude = "#todo-list-form, " <> searchInputInclude
 
-addFormStateInclude :: Text
-addFormStateInclude = "#todo-list-form [name='filter'], #todo-input"
+addFormFilterInclude :: Text
+addFormFilterInclude = "#todo-list-form input[name='filter']"
 
 
 runDbOr500 :: Pool -> Session a -> Handler a
@@ -346,11 +359,13 @@ addTodo pool request = do
     , searchTitle = ""
     , mutation = addMutationStatus normalizedTitle isDuplicate
     , highlightedTodoId = fmap (.id) duplicateTodo
+    , editingTodoId = Nothing
+    , editingTitle = Nothing
     }
 
 toggleTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
 toggleTodo pool todoId listState = do
-  logInfoH $ "PATCH /todos/" <> T.pack (show todoId) <> " toggle"
+  logInfoH $ "PATCH /todos/" <> show todoId <> " toggle"
   runDbOr500 pool (toggleTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
   logInfoH $ "DB toggle todos=" <> T.show items
@@ -358,7 +373,7 @@ toggleTodo pool todoId listState = do
 
 deleteTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
 deleteTodo pool todoId listState = do
-  logInfoH $ "DELETE /todos/" <> T.pack (show todoId)
+  logInfoH $ "DELETE /todos/" <> show todoId
   runDbOr500 pool (deleteTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
   logInfoH $ "DB delete todos=" <> T.show items
@@ -374,7 +389,7 @@ clearCompleted pool listState = do
 
 editTodoForm :: Pool -> Int64 -> Handler TodoEditView
 editTodoForm pool todoId = do
-  logInfoH $ "GET /todos/" <> T.pack (show todoId) <> "/edit"
+  logInfoH $ "GET /todos/" <> show todoId <> "/edit"
   mTodo <- runDbOr500 pool (getTodoSession todoId)
   logInfoH $ "DB edit todo=" <> T.show mTodo
   case mTodo of
@@ -385,18 +400,23 @@ updateTodo :: Pool -> Int64 -> UpdateTodoRequest -> Handler TodoMutationView
 updateTodo pool todoId request = do
   let title' = request.updateTitle
   let normalizedTitle = normalizeTitle title'
-  logInfoH $ "PUT /todos/" <> T.pack (show todoId) <> " title=" <> normalizedTitle
+  logInfoH $ "PUT /todos/" <> show todoId <> " title=" <> normalizedTitle
   isDuplicate <- runDbOr500 pool (todoTitleExistsExceptSession todoId normalizedTitle)
+  duplicateTodo <-
+    if isDuplicate
+      then runDbOr500 pool (getTodoByTitleExceptSession todoId normalizedTitle)
+      else pure Nothing
   let updated = not (T.null normalizedTitle) && not isDuplicate
   unless (T.null normalizedTitle || isDuplicate) $
     runDbOr500 pool (updateTodoTitleSession todoId normalizedTitle)
   items <- runDbOr500 pool getTodosSession
   logInfoH $ "DB update updated=" <> T.show updated <> " todos=" <> T.show items
-  pure $ mutationView
-    (if isDuplicate then TodoUpdateDuplicate else TodoUpdated)
-    request.updateState
-    items
-    Nothing
+  if updated
+    then pure $ mutationView TodoUpdated request.updateState items Nothing
+    else pure (mutationView TodoUpdateDuplicate request.updateState items (fmap (.id) duplicateTodo))
+      { editingTodoId = Just todoId
+      , editingTitle = Just title'
+      }
 
 filterText :: Maybe Text -> Text
 filterText = fromMaybe "all"
@@ -424,6 +444,8 @@ mutationView status listState items highlightedTodoId' =
     , searchTitle = stateSearchText listState
     , mutation = status
     , highlightedTodoId = highlightedTodoId'
+    , editingTodoId = Nothing
+    , editingTitle = Nothing
     }
 
 throwServerError :: Servant.Server.ServerError -> Handler a
@@ -451,6 +473,18 @@ getTodoByTitleSession title' = do
       select id :: int8, title :: text, completed :: bool
       from todos
       where lower(btrim(title)) = lower(btrim($1 :: text))
+      order by id
+      limit 1
+    |]
+
+getTodoByTitleExceptSession :: Int64 -> Text -> Session (Maybe Todo)
+getTodoByTitleExceptSession id' title' = do
+  fmap (\(id'', title'', completed') -> Todo id'' title'' completed') <$> statement (id', title')
+    [maybeStatement|
+      select id :: int8, title :: text, completed :: bool
+      from todos
+      where id <> $1 :: int8
+        and lower(btrim(title)) = lower(btrim($2 :: text))
       order by id
       limit 1
     |]
@@ -492,69 +526,143 @@ updateTodoTitleSession id' title' = statement (title', id')
 
 todoPage :: [Todo] -> Text -> Html ()
 todoPage items filterBy = pageShell [hsx|
-  <article>
-    <h1>Todos</h1>
-    {todoAddForm}
-    <nav>
-      <ul>
-        <li><a href="#" hx-get="/todos/list?filter=all" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>All</a></li>
-        <li><a href="#" hx-get="/todos/list?filter=active" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>Active</a></li>
-        <li><a href="#" hx-get="/todos/list?filter=completed" hx-include={searchInputInclude} hx-target="#todo-list" hx-swap={listSwap}>Completed</a></li>
-      </ul>
-    </nav>
+  <section class="todoapp">
+    <header class="header">
+      <h1>todos</h1>
+      {todoAddForm}
+    </header>
     {todoListSection items "" filterBy}
-  </article>
+  </section>
 |]
 
 todoAddForm :: Html ()
 todoAddForm = [hsx|
-  <form id="add-form" hx-post="/todos" hx-target="#add-form" hx-swap="outerHTML" hx-include="#todo-list-form [name='filter']">
-    <fieldset role="group">
-      <input id="todo-input" name="title" placeholder="What needs to be done?" autocomplete="off" required autofocus
-             hx-get="/todos/list" hx-trigger="input changed delay:500ms"
-             hx-include={addFormStateInclude}
-             hx-target="#todo-list" hx-swap={listSwap} hx-sync="closest form:abort">
-      <button type="submit">Add</button>
-    </fieldset>
+  <form
+    id="add-form"
+    hx-post="/todos"
+    hx-target="#add-form"
+    hx-swap="outerHTML"
+    hx-include={addFormFilterInclude}
+  >
+    <input
+      id="todo-input"
+      class="new-todo"
+      type="text"
+      aria-label="New todo"
+      name="title"
+      placeholder="What needs to be done?"
+      autocomplete="off"
+      required
+      autofocus
+      hx-get="/todos/list"
+      hx-trigger="input changed delay:500ms"
+      hx-include={addFormFilterInclude}
+      hx-target="#todo-list"
+      hx-swap={listSwap}
+      hx-sync="closest form:abort"
+    >
   </form>
 |]
 
 todoEditForm :: Todo -> Html ()
-todoEditForm todo = [hsx|
-  <li style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color);"
-      id={"todo-item-" <> show todo.id :: Text}>
-    <form hx-put={"/todos/" <> show todo.id :: Text} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="width: 100%; display: flex; margin-bottom: 0;">
-      <input type="text" name="edit-title" value={todo.title} required autofocus style="flex: 1; margin-bottom: 0;">
-      <button type="submit" class="outline" style="margin-left: 0.5rem; width: auto; padding: 0.25rem 0.5rem; margin-bottom: 0;">Save</button>
+todoEditForm todo = todoEditFormWithTitle todo todo.title
+
+todoEditFormWithTitle :: Todo -> Text -> Html ()
+todoEditFormWithTitle todo title' = [hsx|
+  <li id={"todo-" <> show todo.id :: Text} class="editing">
+    <form
+      hx-put={"/todos/" <> show todo.id :: Text}
+      hx-include={listStateInclude}
+      hx-target="#todo-list"
+      hx-swap={listSwap}
+    >
+      <input
+        class="edit"
+        type="text"
+        id={"todo-edit-" <> show todo.id :: Text}
+        name="edit-title"
+        value={title'}
+        autofocus
+        required
+      >
     </form>
   </li>
 |]
 
+filterLink :: Text -> Text -> Text -> Html ()
+filterLink filterName label currentFilter = [hsx|
+  <li>{anchor}</li>
+|]
+  where
+    href :: Text
+    href = "/todos/list?filter=" <> filterName
+    anchor :: Html ()
+    anchor =
+      [hsx|
+        <a
+          href="#"
+          class={classes}
+          hx-get={href}
+          hx-include={searchInputInclude}
+          hx-target="#todo-list"
+          hx-swap={listSwap}
+        >
+          {label}
+        </a>
+      |]
+      where
+        classes :: Text
+        classes
+          | filterName == currentFilter = "selected"
+          | otherwise                   = ""
+
 todoListSection :: [Todo] -> Text -> Text -> Html ()
-todoListSection items searchQ filterBy = todoListSectionHighlighted items searchQ filterBy Nothing
+todoListSection items searchQ filterBy =
+  todoListSectionWithOptions items searchQ filterBy Nothing False Nothing Nothing
 
 todoListSectionHighlighted :: [Todo] -> Text -> Text -> Maybe Int64 -> Html ()
 todoListSectionHighlighted items searchQ filterBy highlightedTodoId =
-  todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId False
+  todoListSectionWithOptions items searchQ filterBy highlightedTodoId False Nothing Nothing
 
 todoListSectionHighlightedOob :: [Todo] -> Text -> Text -> Maybe Int64 -> Bool -> Html ()
 todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId oob =
+  todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob Nothing Nothing
+
+todoListSectionWithOptions :: [Todo] -> Text -> Text -> Maybe Int64 -> Bool -> Maybe Int64 -> Maybe Text -> Html ()
+todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob editingTodoId editingTitle =
   if oob
-    then [hsx|<section id="todo-list" hx-swap-oob={listSwap}>{todoListForm}</section>|]
-    else [hsx|<section id="todo-list">{todoListForm}</section>|]
+    then [hsx|
+      <div id="todo-list" hx-swap-oob={listSwap}>
+        {todoListForm}
+      </div>
+    |]
+    else [hsx|
+      <div id="todo-list">
+        {todoListForm}
+      </div>
+    |]
   where
     todoListForm = [hsx|
-    <form id="todo-list-form">
-      <input type="hidden" name="filter" value={filterBy}>
-      <ul style="list-style: none; padding: 0;">
-        {mapM_ (todoItemHighlighted highlightedTodoId) matched}
-      </ul>
-      <footer style="display: flex; justify-content: space-between; align-items: center;">
-        <small>{activeCountText}</small>
-        {clearButton}
-      </footer>
-    </form>
-  |]
+      <div id="todo-list-form">
+        <input type="hidden" name="filter" value={filterBy}>
+        <section class="main">
+          {toggleAll}
+          <label for="toggle-all">Mark all as complete</label>
+          <ul class="todo-list">
+            {mapM_ todoRow matched}
+          </ul>
+        </section>
+        <footer class="footer">
+          <span class="todo-count"><strong>{activeCountText}</strong> {todoCountLabel activeCount}</span>
+          <ul class="filters">
+            {filterLink "all" "All" filterBy}
+            {filterLink "active" "Active" filterBy}
+            {filterLink "completed" "Completed" filterBy}
+          </ul>
+          {clearButton}
+        </footer>
+      </div>
+    |]
     searched = filter (todoMatchesSearch searchQ) items
     matched = case filterBy of
       "active"    -> filter (not . (.completed)) searched
@@ -562,65 +670,134 @@ todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId oob =
       _           -> searched
     activeCount = length $ filter (not . (.completed)) items
     activeCountText :: Text
-    activeCountText = show activeCount <> " item" <> (if activeCount == 1 then "" else "s") <> " left"
+    activeCountText = show activeCount
     completedCount = length $ filter (.completed) items
-    completedCountText :: Text
-    completedCountText = show completedCount
+    allMatchedCompleted = not (null matched) && all (.completed) matched
+    toggleAll :: Html ()
+    toggleAll
+      | allMatchedCompleted = [hsx|
+          <input
+            id="toggle-all"
+            class="toggle-all"
+            type="checkbox"
+            checked
+          >
+        |]
+      | otherwise = [hsx|
+          <input
+            id="toggle-all"
+            class="toggle-all"
+            type="checkbox"
+          >
+        |]
+    todoRow :: Todo -> Html ()
+    todoRow todo
+      | Just todo.id == editingTodoId = todoEditFormWithTitle todo (fromMaybe todo.title editingTitle)
+      | otherwise = todoItemHighlighted highlightedTodoId todo
     clearButton :: Html ()
     clearButton
       | completedCount > 0 = [hsx|
-          <button class="outline" hx-post="/todos/clear" hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap}>
-            Clear completed ({completedCountText})
+          <button
+            class="clear-completed"
+            hx-post="/todos/clear"
+            hx-include={listStateInclude}
+            hx-target="#todo-list"
+            hx-swap={listSwap}
+          >
+            Clear completed
           </button>
         |]
       | otherwise = mempty
 
+todoCountLabel :: Int -> Text
+todoCountLabel n = (if n == 1 then "item" else "items") <> " left"
+
 todoMatchesSearch :: Text -> Todo -> Bool
 todoMatchesSearch searchQ todo =
-  null queryTokens || queryTokens `prefixSubsequenceOf` titleTokens
-  where
-    queryTokens = searchTokens searchQ
-    titleTokens = searchTokens todo.title
+  maybe True (`T.isInfixOf` normalizeTitleKey todo.title) (normalizeSearch searchQ)
 
-searchTokens :: Text -> [Text]
-searchTokens = T.words . T.replace "+" " " . normalizeTitleKey
+normalizeSearch :: Text -> Maybe Text
+normalizeSearch = nonEmptyText . normalizeTitleKey . T.replace "+" " "
 
-prefixSubsequenceOf :: [Text] -> [Text] -> Bool
-prefixSubsequenceOf [] _ = True
-prefixSubsequenceOf _ [] = False
-prefixSubsequenceOf query@(q:qs) (title:titleRest)
-  | q `T.isPrefixOf` title = qs `prefixSubsequenceOf` titleRest
-  | otherwise = query `prefixSubsequenceOf` titleRest
+nonEmptyText :: Text -> Maybe Text
+nonEmptyText text
+  | T.null text = Nothing
+  | otherwise = Just text
 
 todoItem :: Todo -> Html ()
 todoItem = todoItemHighlighted Nothing
 
 todoItemHighlighted :: Maybe Int64 -> Todo -> Html ()
 todoItemHighlighted highlightedTodoId todo = [hsx|
-  <li style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color);"
-      class={classes}
-      id={"todo-item-" <> show todo.id :: Text}>
-    {completed}
-    {titleHtml}
-    <button class="outline secondary" hx-delete={deletePath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} hx-confirm="Delete this todo?"
-            style="margin-left: auto; width: auto; padding: 0.25rem 0.5rem; margin-bottom: 0;">
-      ✕
-    </button>
+  <li
+    id={"todo-" <> show todo.id :: Text}
+    class={classes}
+  >
+    <div class="view">
+      {toggle}
+      <label
+        hx-get={editPath}
+        hx-trigger="dblclick"
+        hx-target={itemTarget}
+        hx-swap={listSwap}
+      >
+        {todo.title}
+      </label>
+      <button
+        class="destroy"
+        hx-delete={deletePath}
+        hx-include={listStateInclude}
+        hx-target="#todo-list"
+        hx-swap={listSwap}
+      ></button>
+    </div>
   </li>
 |]
   where
     patchPath  = "/todos/" <> show todo.id :: Text
     deletePath = "/todos/" <> show todo.id :: Text
     editPath   = "/todos/" <> show todo.id <> "/edit" :: Text
+    itemTarget = "#todo-" <> show todo.id :: Text
     classes :: Text
-    classes
-      | Just todo.id == highlightedTodoId = "todo-highlight"
-      | otherwise = ""
-    completed :: Html ()
-    completed
-      | todo.completed = [hsx|<input type="checkbox" checked hx-patch={patchPath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="margin-bottom: 0;">|]
-      | otherwise      = [hsx|<input type="checkbox" hx-patch={patchPath} hx-include={listStateInclude} hx-target="#todo-list" hx-swap={listSwap} style="margin-bottom: 0;">|]
-    titleHtml :: Html ()
-    titleHtml
-      | todo.completed = [hsx|<s style="opacity: 0.5;" hx-get={editPath} hx-trigger="dblclick" hx-target={"#todo-item-" <> show todo.id :: Text} hx-swap={listSwap}>{todo.title}</s>|]
-      | otherwise      = [hsx|<span hx-get={editPath} hx-trigger="dblclick" hx-target={"#todo-item-" <> show todo.id :: Text} hx-swap={listSwap}>{todo.title}</span>|]
+    classes = unwords $ completedClass <> highlightClass
+    completedClass
+      | todo.completed = ["completed"]
+      | otherwise = []
+    highlightClass
+      | Just todo.id == highlightedTodoId = ["duplicate-flash"]
+      | otherwise = []
+    toggle :: Html ()
+    toggle
+      | todo.completed = [hsx|
+          <input
+            class="toggle"
+            type="checkbox"
+            checked
+            hx-patch={patchPath}
+            hx-include={listStateInclude}
+            hx-target="#todo-list"
+            hx-swap={listSwap}
+          >
+        |]
+      | otherwise = [hsx|
+          <input
+            class="toggle"
+            type="checkbox"
+            hx-patch={patchPath}
+            hx-include={listStateInclude}
+            hx-target="#todo-list"
+            hx-swap={listSwap}
+          >
+        |]
+
+focusTodoInputScript :: Html ()
+focusTodoInputScript =
+  [hsx|
+    <script>
+      setTimeout(function(){document.getElementById('todo-input')?.focus()},0)
+    </script>
+  |]
+
+focusEditInputScript :: Int64 -> Html ()
+focusEditInputScript todoId =
+  toHtmlRaw ("<script>setTimeout(function(){document.querySelector('#todo-" <> show todoId <> " .edit')?.focus()},0)</script>" :: Text)

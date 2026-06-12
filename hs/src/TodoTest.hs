@@ -50,13 +50,18 @@ testRoute = withResource acquirePool releasePool \getPool ->
   , testWai (appWithPool getPool) "GET /todos" do
       resp <- Test.get "/todos"
       assertStatus 200 resp
-      assertBodyContains "Todos" resp
+      assertBodyContains "<section class=\"todoapp\">" resp
+      assertBodyContains "<h1>todos</h1>" resp
       assertBodyContains "What needs to be done?" resp
+      assertBodyContains "class=\"new-todo\"" resp
       assertBodyContains "hx-get=\"/todos/list\"" resp
       assertBodyContains "hx-trigger=\"input changed delay:500ms\"" resp
-      assertBodyContains "hx-include=\"#todo-list-form [name=&#39;filter&#39;], #todo-input\"" resp
+      assertBodyContains "hx-include=\"#todo-list-form input[name=&#39;filter&#39;]\"" resp
+      assertBodyContains "hx-swap=\"outerMorph\"" resp
       assertBodyContains "hx-sync=\"closest form:abort\"" resp
       assertBodyContains "hx-post=\"/todos\"" resp
+      assertBodyContains "class=\"todo-list\"" resp
+      assertBodyContains "Double-click to edit, Enter to add" resp
       assertBodyDoesNotContain "data-hx-json" resp
       assertBodyDoesNotContain "form-json.js" resp
   , testWai (appWithPool getPool) "JSON clients use the same todo routes" do
@@ -97,7 +102,8 @@ testRoute = withResource acquirePool releasePool \getPool ->
       respEdit <- Test.get editPath
       assertStatus 200 respEdit
       assertBodyContains "Buy milk" respEdit
-      assertBodyContains "Save" respEdit
+      assertBodyContains "class=\"editing\"" respEdit
+      assertBodyContains "class=\"edit\"" respEdit
 
       -- 3. Update
       let updatePath = "/todos/" <> idStr
@@ -121,31 +127,33 @@ testRoute = withResource acquirePool releasePool \getPool ->
       _ <- postForm "/todos" "title=Task+C"
       respDupAdd <- postForm "/todos" "title=Task+C"
       assertStatus 200 respDupAdd
-      assertBodyContains "todo-highlight" respDupAdd
+      assertBodyContains "duplicate-flash" respDupAdd
 
-      -- Search for token prefixes of "Task A"
-      respSearch <- Test.get "/todos/list?title=Ta%20A"
+      -- Search matches the Clojure app's case-insensitive substring behavior.
+      respSearch <- Test.get "/todos/list?title=ask%20A"
       assertStatus 200 respSearch
       assertBodyContains "Task A" respSearch
       assertBodyDoesNotContain "Task B" respSearch
 
-      respTokenPrefixSearch <- Test.get "/todos/list?title=A"
-      assertStatus 200 respTokenPrefixSearch
-      assertBodyContains "Task A" respTokenPrefixSearch
-      assertBodyDoesNotContain "Task B" respTokenPrefixSearch
-      assertBodyDoesNotContain "Task C" respTokenPrefixSearch
+      respNonSubstringSearch <- Test.get "/todos/list?title=Ta%20A"
+      assertStatus 200 respNonSubstringSearch
+      assertBodyDoesNotContain "Task A" respNonSubstringSearch
 
       -- Get all IDs from the public HTML representation and toggle first two.
       respAll <- Test.get "/todos/list"
       allIds <- liftIO $ requireTodoIds "three created todos" 3 respAll
       case allIds of
         (a:b:_) -> do
-          let bStr = encodeUtf8 (show b :: Text)
+          let bText = show b :: Text
+          let bStr = encodeUtf8 bText
           respDupUpdate <- putForm ("/todos/" <> bStr) "edit-title=Task+A"
           assertStatus 200 respDupUpdate
           assertBodyContains "Task A" respDupUpdate
-          assertBodyContains "Task B" respDupUpdate
           assertBodyContains "Task C" respDupUpdate
+          assertBodyContains "duplicate-flash" respDupUpdate
+          assertBodyContains "class=\"editing\"" respDupUpdate
+          assertBodyContains "value=\"Task A\"" respDupUpdate
+          assertBodyContains (LBS.fromStrict $ encodeUtf8 (".querySelector('#todo-" <> bText <> " .edit')?.focus()" :: Text)) respDupUpdate
 
           let aStr = encodeUtf8 (show a :: Text)
           _ <- patchForm ("/todos/" <> aStr) ""
@@ -301,7 +309,7 @@ todoIdsFromText body =
               (digits, remaining) = T.span isDigit afterPrefix
            in maybe id (:) (readMaybe (toString digits)) (todoIdsFromText remaining)
   where
-    todoItemIdPrefix = "id=\"todo-item-"
+    todoItemIdPrefix = "id=\"todo-"
 
 truncateTodosSession :: Session ()
 truncateTodosSession =

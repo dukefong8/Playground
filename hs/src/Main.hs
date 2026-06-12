@@ -15,4 +15,4 @@ main :: IO ()
 main = do
   bracket acquirePool releasePool \pool ->
     rapid 0 \r -> restart r "server" $
-      Wai.run 8080 (app pool)
+      Wai.run 8000 (app pool)

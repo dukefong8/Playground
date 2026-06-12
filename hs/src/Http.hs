@@ -25,24 +25,30 @@ pageShell body = [hsx|
   <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>My Simple HTML Page</title>
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+      <title>Todo Servant</title>
+      <link href="https://unpkg.com/todomvc-app-css@2.4.1/index.css" rel="stylesheet">
+      <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@next"></script>
       <style>
-        @keyframes todo-flash {
-          0% { background-color: color-mix(in srgb, var(--pico-primary), transparent 78%); }
-          100% { background-color: transparent; }
+        @keyframes duplicate-flash {
+          0% {
+            background: rgba(255, 208, 0, 0.45);
+          }
+
+          100% {
+            background: transparent;
+          }
         }
-        .todo-highlight {
-          animation: todo-flash 1.5s ease-out;
+
+        .todo-list li.duplicate-flash {
+          animation: duplicate-flash 0.9s ease;
         }
       </style>
-      <script src="https://cdn.jsdelivr.net/npm/htmx.org@4.0.0-beta2/dist/htmx.min.js"></script>
     </head>
     <body>
-      <main class="container">
       {body}
-      </main>
+      <footer class="info">
+        <p>Double-click to edit, Enter to add</p>
+      </footer>
     </body>
   </html>
 |]
