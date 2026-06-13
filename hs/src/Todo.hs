@@ -27,8 +27,7 @@ import Prelude hiding (Handler, id)
 import Database
 import Hasql.TH
 import Htmx
-import Http
-
+import Html
 import Colog (LoggerT, Message, cmap, fmtMessage, logInfo, logTextStdout, usingLoggerT)
 import Servant.API
 import Servant.Server
@@ -251,9 +250,9 @@ data TodoItemAPI mode = TodoItemAPI
   { toggle
       :: mode :- ReqBody '[FormUrlEncoded, JSON] TodoListState
       :> Patch '[HTML, JSON] TodoMutationView
-  , delete
-      :: mode :- ReqBody '[FormUrlEncoded, JSON] TodoListState
-      :> Delete '[HTML, JSON] TodoMutationView
+    , delete
+        :: mode :- QueryParam "filter" Text
+        :> Delete '[HTML, JSON] TodoMutationView
   , edit
       :: mode :- "edit"
       :> Get '[HTML, JSON] TodoEditView
@@ -325,21 +324,21 @@ getTodosSession = do
       select id :: int8, title :: text, completed :: bool from todos order by id
     |]
 
-getTodosPage :: Pool -> Maybe Text -> Maybe Text -> Handler TodosView
+getTodosPage :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> Handler TodosView
 getTodosPage pool filter_ search_ = do
   logInfoH $ "GET /todos page filter=" <> filterText filter_ <> " search=" <> searchText search_
   items <- runDbOr500 pool getTodosSession
   logInfoH $ "DB todos page todos=" <> T.show items
   pure $ TodosView items (filterText filter_) (searchText search_)
 
-getTodoListPartial :: Pool -> Maybe Text -> Maybe Text -> Handler TodoListView
+getTodoListPartial :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> Handler TodoListView
 getTodoListPartial pool filter_ search_ = do
   logInfoH $ "GET /todos/list filter=" <> filterText filter_ <> " search=" <> searchText search_
   items   <- runDbOr500 pool getTodosSession
   logInfoH $ "DB todos list todos=" <> T.show items
   pure $ TodoListView items (filterText filter_) (searchText search_) Nothing False
 
-addTodo :: Pool -> AddTodoRequest -> Handler TodoMutationView
+addTodo :: HasCallStack => Pool -> AddTodoRequest -> Handler TodoMutationView
 addTodo pool request = do
   let normalizedTitle = normalizeTitle request.addTitle
   logInfoH $ "POST /todos add title=" <> normalizedTitle
@@ -363,7 +362,7 @@ addTodo pool request = do
     , editingTitle = Nothing
     }
 
-toggleTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
+toggleTodo :: HasCallStack => Pool -> Int64 -> TodoListState -> Handler TodoMutationView
 toggleTodo pool todoId listState = do
   logInfoH $ "PATCH /todos/" <> show todoId <> " toggle"
   runDbOr500 pool (toggleTodoSession todoId)
@@ -371,15 +370,15 @@ toggleTodo pool todoId listState = do
   logInfoH $ "DB toggle todos=" <> T.show items
   pure $ mutationView TodoToggled listState items Nothing
 
-deleteTodo :: Pool -> Int64 -> TodoListState -> Handler TodoMutationView
-deleteTodo pool todoId listState = do
+deleteTodo :: HasCallStack => Pool -> Int64 -> Maybe Text -> Handler TodoMutationView
+deleteTodo pool todoId mFilter = do
   logInfoH $ "DELETE /todos/" <> show todoId
   runDbOr500 pool (deleteTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
   logInfoH $ "DB delete todos=" <> T.show items
-  pure $ mutationView TodoDeleted listState items Nothing
+  pure $ mutationView TodoDeleted (TodoListState mFilter Nothing) items Nothing
 
-clearCompleted :: Pool -> TodoListState -> Handler TodoMutationView
+clearCompleted :: HasCallStack => Pool -> TodoListState -> Handler TodoMutationView
 clearCompleted pool listState = do
   logInfoH "POST /todos/clear"
   runDbOr500 pool clearCompletedSession
@@ -387,7 +386,7 @@ clearCompleted pool listState = do
   logInfoH $ "DB clear todos=" <> T.show items
   pure $ mutationView TodoCleared listState items Nothing
 
-editTodoForm :: Pool -> Int64 -> Handler TodoEditView
+editTodoForm :: HasCallStack => Pool -> Int64 -> Handler TodoEditView
 editTodoForm pool todoId = do
   logInfoH $ "GET /todos/" <> show todoId <> "/edit"
   mTodo <- runDbOr500 pool (getTodoSession todoId)
@@ -396,7 +395,7 @@ editTodoForm pool todoId = do
     Just todo -> pure $ TodoEditView todo
     Nothing   -> throwServerError err404 { errBody = "Todo not found" }
 
-updateTodo :: Pool -> Int64 -> UpdateTodoRequest -> Handler TodoMutationView
+updateTodo :: HasCallStack => Pool -> Int64 -> UpdateTodoRequest -> Handler TodoMutationView
 updateTodo pool todoId request = do
   let title' = request.updateTitle
   let normalizedTitle = normalizeTitle title'
@@ -525,14 +524,39 @@ updateTodoTitleSession id' title' = statement (title', id')
   [resultlessStatement| update todos set title = $1 :: text where id = $2 :: int8 |]
 
 todoPage :: [Todo] -> Text -> Html ()
-todoPage items filterBy = pageShell [hsx|
-  <section class="todoapp">
-    <header class="header">
-      <h1>todos</h1>
-      {todoAddForm}
-    </header>
-    {todoListSection items "" filterBy}
-  </section>
+todoPage items filterBy =
+  pageShell todoHead [hsx|
+    <section class="todoapp">
+      <header class="header">
+        <h1>todos</h1>
+        {todoAddForm}
+      </header>
+      {todoListSection items "" filterBy}
+      <footer class="info">
+        <p>Double-click to edit, Enter to add</p>
+      </footer>
+    </section>
+  |]
+
+todoHead :: Html ()
+todoHead = [hsx|
+  <title>Todo Servant</title>
+  <link href="https://unpkg.com/todomvc-app-css@2.4.1/index.css" rel="stylesheet">
+  <style>
+    @keyframes duplicate-flash {
+      0% {
+        background: rgba(255, 208, 0, 0.45);
+      }
+
+      100% {
+        background: transparent;
+      }
+    }
+
+    .todo-list li.duplicate-flash {
+      animation: duplicate-flash 0.9s ease;
+    }
+  </style>
 |]
 
 todoAddForm :: Html ()

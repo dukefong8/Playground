@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes       #-}
 module Htmx (hsx, module Lucid) where
 
 import Data.Set qualified as Set

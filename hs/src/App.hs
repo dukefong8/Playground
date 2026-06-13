@@ -10,18 +10,16 @@
 module App
   ( app
   , appRoutes
-  , logRequest
   , index
   , page404
   ) where
 
 import Prelude hiding (Handler)
 
-import Colog
 import Database
 import Htmx
-import Http
-import Network.Wai (Application, Middleware, rawPathInfo, requestMethod)
+import Html
+import Network.Wai (Application)
 import Servant.API
 import Servant.Server
 import Servant.Server.Internal.Handler (pattern MkHandler)
@@ -44,22 +42,11 @@ helloHandler _pool name = pure [hsx|<h1 id="hello">Hello, {name}!</h1>|]
 
 app :: Pool -> Application
 app pool =
-  logRequest $
-    serve appRoutes $
-      index
-        :<|> helloHandler pool
-        :<|> todoServer pool
-        :<|> notFound
-
-logger :: MonadIO m => LoggerT Message m a -> m a
-logger = usingLoggerT $ cmap fmtMessage logTextStdout
-
-logRequest :: Middleware
-logRequest nextApp req sendResponse = do
-  let method = requestMethod req
-  let path = rawPathInfo req
-  logger $ logInfo $ "REQ " <> decodeUtf8 method <> " " <> decodeUtf8 path
-  nextApp req sendResponse
+  serve appRoutes $
+    index
+      :<|> helloHandler pool
+      :<|> todoServer pool
+      :<|> notFound
 
 index :: Handler (Html ())
 index = pure [hsx|<h1>Welcome!</h1>|]
