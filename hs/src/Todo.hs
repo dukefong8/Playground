@@ -27,7 +27,6 @@ import Prelude hiding (Handler, id)
 import Database
 import Hasql.TH
 import Htmx
-import Html
 import Colog (LoggerT, Message, cmap, fmtMessage, logInfo, logTextStdout, usingLoggerT)
 import Servant.API
 import Servant.Server

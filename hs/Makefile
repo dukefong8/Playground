@@ -27,7 +27,7 @@ env:
 		bluefin co-log ki io-classes io-sim nothunks strict-wrapper \
 		hasql hasql-th hasql-pool hasql-transaction \
 		http-api-data http-media http-types ihp-hsx lucid2 \
-		servant servant-server twain wai wai-extra warp \
+		servant servant-server ihp-router wai wai-extra warp \
 		breakpoint rapid tasty tasty-hunit tasty-wai
 
 hie:

@@ -18,7 +18,6 @@ import Prelude hiding (Handler)
 
 import Database
 import Htmx
-import Html
 import Network.Wai (Application)
 import Servant.API
 import Servant.Server

@@ -153,7 +153,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
           assertBodyContains "duplicate-flash" respDupUpdate
           assertBodyContains "class=\"editing\"" respDupUpdate
           assertBodyContains "value=\"Task A\"" respDupUpdate
-          assertBodyContains (LBS.fromStrict $ encodeUtf8 (".querySelector('#todo-" <> bText <> " .edit')?.focus()" :: Text)) respDupUpdate
+          assertBodyContains (fromStrict $ encodeUtf8 (".querySelector('#todo-" <> bText <> " .edit')?.focus()" :: Text)) respDupUpdate
 
           let aStr = encodeUtf8 (show a :: Text)
           _ <- patchForm ("/todos/" <> aStr) ""
