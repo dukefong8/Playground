@@ -38,11 +38,12 @@ import Data.Text qualified as T
 import Data.Vector qualified as V
 import Prelude hiding (id)
 
-import Colog (LoggerT, Message, cmap, fmtMessage, logInfo, logTextStdout, usingLoggerT)
+import Colog (logInfo)
 import Database
 import Hasql.TH
 import Htmx
 import Http (RouteHandler, runDbOr500, throwRouteError)
+import Logger (logger)
 import Network.HTTP.Types (status404)
 import Web.FormUrlEncoded
 
@@ -161,6 +162,10 @@ renderTodoMutationViewHtml mutationResult = renderBS case mutationResult.mutatio
         mutationResult.editingTitle
 
 
+infoLog :: HasCallStack => Text -> RouteHandler ()
+infoLog msg =
+  withFrozenCallStack $ logger $ logInfo msg
+
 normalizeTitle :: Text -> Text
 normalizeTitle = T.strip
 
@@ -179,13 +184,6 @@ listStateInclude = "#todo-list-form, " <> searchInputInclude
 addFormFilterInclude :: Text
 addFormFilterInclude = "#todo-list-form input[name='filter']"
 
-logger :: MonadIO m => LoggerT Message m a -> m a
-logger = usingLoggerT $ cmap fmtMessage logTextStdout
-
-logInfoH :: HasCallStack => Text -> RouteHandler ()
-logInfoH msg =
-  withFrozenCallStack $ logger $ logInfo msg
-
 getTodosSession :: Session [Todo]
 getTodosSession = do
   V.toList . V.map (\(id', title', completed') -> Todo id' title' completed') <$> statement ()
@@ -195,22 +193,22 @@ getTodosSession = do
 
 getTodosPage :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> RouteHandler TodosView
 getTodosPage pool filter_ search_ = do
-  logInfoH $ "GET /todos page filter=" <> filterText filter_ <> " search=" <> searchText search_
+  infoLog $ "GET /todos page filter=" <> filterText filter_ <> " search=" <> searchText search_
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB todos page todos=" <> T.show items
+  infoLog $ "DB todos page todos=" <> T.show items
   pure $ TodosView items (filterText filter_) (searchText search_)
 
 getTodoListPartial :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> RouteHandler TodoListView
 getTodoListPartial pool filter_ search_ = do
-  logInfoH $ "GET /todos/list filter=" <> filterText filter_ <> " search=" <> searchText search_
+  infoLog $ "GET /todos/list filter=" <> filterText filter_ <> " search=" <> searchText search_
   items   <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB todos list todos=" <> T.show items
+  infoLog $ "DB todos list todos=" <> T.show items
   pure $ TodoListView items (filterText filter_) (searchText search_) Nothing False
 
 addTodo :: HasCallStack => Pool -> AddTodoRequest -> RouteHandler TodoMutationView
 addTodo pool request = do
   let normalizedTitle = normalizeTitle request.addTitle
-  logInfoH $ "POST /todos add title=" <> normalizedTitle
+  infoLog $ "POST /todos add title=" <> normalizedTitle
   isDuplicate <- runDbOr500 pool (todoTitleExistsSession normalizedTitle)
   duplicateTodo <-
     if isDuplicate
@@ -220,7 +218,7 @@ addTodo pool request = do
   unless (T.null normalizedTitle || isDuplicate) $
     runDbOr500 pool (addTodoSession normalizedTitle)
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB add added=" <> T.show addedAny <> " duplicateTodo=" <> T.show duplicateTodo <> " todos=" <> T.show items
+  infoLog $ "DB add added=" <> T.show addedAny <> " duplicateTodo=" <> T.show duplicateTodo <> " todos=" <> T.show items
   pure TodoMutationView
     { todos = items
     , filterBy = stateFilterText request.addState
@@ -233,33 +231,33 @@ addTodo pool request = do
 
 toggleTodo :: HasCallStack => Pool -> Int64 -> TodoListState -> RouteHandler TodoMutationView
 toggleTodo pool todoId listState = do
-  logInfoH $ "PATCH /todos/" <> show todoId <> " toggle"
+  infoLog $ "PATCH /todos/" <> show todoId <> " toggle"
   runDbOr500 pool (toggleTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB toggle todos=" <> T.show items
+  infoLog $ "DB toggle todos=" <> T.show items
   pure $ mutationView TodoToggled listState items Nothing
 
 deleteTodo :: HasCallStack => Pool -> Int64 -> Maybe Text -> RouteHandler TodoMutationView
 deleteTodo pool todoId mFilter = do
-  logInfoH $ "DELETE /todos/" <> show todoId
+  infoLog $ "DELETE /todos/" <> show todoId
   runDbOr500 pool (deleteTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB delete todos=" <> T.show items
+  infoLog $ "DB delete todos=" <> T.show items
   pure $ mutationView TodoDeleted (TodoListState mFilter Nothing) items Nothing
 
 clearCompleted :: HasCallStack => Pool -> TodoListState -> RouteHandler TodoMutationView
 clearCompleted pool listState = do
-  logInfoH "POST /todos/clear"
+  infoLog "POST /todos/clear"
   runDbOr500 pool clearCompletedSession
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB clear todos=" <> T.show items
+  infoLog $ "DB clear todos=" <> T.show items
   pure $ mutationView TodoCleared listState items Nothing
 
 editTodoForm :: HasCallStack => Pool -> Int64 -> RouteHandler TodoEditView
 editTodoForm pool todoId = do
-  logInfoH $ "GET /todos/" <> show todoId <> "/edit"
+  infoLog $ "GET /todos/" <> show todoId <> "/edit"
   mTodo <- runDbOr500 pool (getTodoSession todoId)
-  logInfoH $ "DB edit todo=" <> T.show mTodo
+  infoLog $ "DB edit todo=" <> T.show mTodo
   case mTodo of
     Just todo -> pure $ TodoEditView todo
     Nothing   -> throwRouteError status404 "Todo not found"
@@ -268,7 +266,7 @@ updateTodo :: HasCallStack => Pool -> Int64 -> UpdateTodoRequest -> RouteHandler
 updateTodo pool todoId request = do
   let title' = request.updateTitle
   let normalizedTitle = normalizeTitle title'
-  logInfoH $ "PUT /todos/" <> show todoId <> " title=" <> normalizedTitle
+  infoLog $ "PUT /todos/" <> show todoId <> " title=" <> normalizedTitle
   isDuplicate <- runDbOr500 pool (todoTitleExistsExceptSession todoId normalizedTitle)
   duplicateTodo <-
     if isDuplicate
@@ -278,7 +276,7 @@ updateTodo pool todoId request = do
   unless (T.null normalizedTitle || isDuplicate) $
     runDbOr500 pool (updateTodoTitleSession todoId normalizedTitle)
   items <- runDbOr500 pool getTodosSession
-  logInfoH $ "DB update updated=" <> T.show updated <> " todos=" <> T.show items
+  infoLog $ "DB update updated=" <> T.show updated <> " todos=" <> T.show items
   if updated
     then pure $ mutationView TodoUpdated request.updateState items Nothing
     else pure (mutationView TodoUpdateDuplicate request.updateState items (fmap (.id) duplicateTodo))

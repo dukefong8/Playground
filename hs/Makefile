@@ -12,7 +12,10 @@ dev:
 	ghciwatch --clear --no-interrupt-reloads \
 		--command ghci-$(GHC) \
 		--error-file ghcid.txt \
+		--restart-glob Makefile \
+		--restart-glob .ghc.environment.* \
 		--enable-eval --watch .
+
 
 exe:
 	mkdir -p .build && ln -sf .build .hiefiles && ln -sf .build .hifiles
@@ -23,11 +26,10 @@ env:
 	cabal install -w ghc-$(GHC) --allow-newer --enable-documentation \
 		--package-env . --lib \
 		base relude containers stm-containers text vector template-haskell \
-		aeson aeson-optics generic-data optics safe-wild-cards witch \
-		bluefin co-log ki io-classes io-sim mtl strict-wrapper \
-		hasql hasql-th hasql-pool hasql-transaction \
-		http-api-data http-media http-types ihp-hsx lucid2 \
-		servant servant-server ihp-router wai wai-extra warp \
+		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
+		hasql hasql-th hasql-dynamic-statements hasql-pool hasql-postgresql-types postgresql-types \
+		http-api-data http-types ihp-hsx ihp-router lucid2 servant servant-server wai wai-extra warp \
+		bluefin co-log fast-logger ki mtl io-classes io-sim grace \
 		breakpoint nothunks rapid tasty tasty-hunit tasty-wai
 
 hie:

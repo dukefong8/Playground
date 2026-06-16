@@ -10,7 +10,6 @@
 module App.TodoTest (tasty, testRoute, testDB) where
 
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
@@ -184,19 +183,19 @@ formHtmlHeaders =
   , ("Accept", "text/html")
   ]
 
-postForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
+postForm :: ByteString -> LByteString -> Test.Session WaiTest.SResponse
 postForm path body =
   Test.postWithHeaders path body formHtmlHeaders
 
-putForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
+putForm :: ByteString -> LByteString -> Test.Session WaiTest.SResponse
 putForm path body =
   Test.srequest $ Test.buildRequestWithHeaders PUT path body formHtmlHeaders
 
-patchForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
+patchForm :: ByteString -> LByteString -> Test.Session WaiTest.SResponse
 patchForm path body =
   Test.srequest $ Test.buildRequestWithHeaders PATCH path body formHtmlHeaders
 
-deleteForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
+deleteForm :: ByteString -> LByteString -> Test.Session WaiTest.SResponse
 deleteForm path body =
   Test.srequest $ Test.buildRequestWithHeaders DELETE path body formHtmlHeaders
 
