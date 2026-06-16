@@ -155,6 +155,5 @@
     "signatureHelp": {
       "globalOn": true
     }
-  },
-  "sessionLoading": "singleComponent"
+  }
 }

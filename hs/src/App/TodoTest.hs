@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
-module TodoTest (tasty, testRoute, testDB) where
+module App.TodoTest (tasty, testRoute, testDB) where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -26,7 +26,7 @@ import Test.Tasty.Wai hiding (Session, head)
 import Test.Tasty.Wai qualified as Test
 
 import App (app)
-import Todo
+import App.Todo
 
 tasty :: TestTree -> IO ()
 tasty action =
@@ -39,7 +39,7 @@ tasty action =
 testRoute :: TestTree
 testRoute = withResource acquirePool releasePool \getPool ->
   inOrderTestGroup "Todo web behavior"
-  [ testWai (appWithPool getPool) "Hello World" do
+  [ testWai (appWithPool getPool) "Home page" do
       resp <- Test.get "/"
       assertStatus 200 resp
       assertBodyContains "Welcome" resp
@@ -47,6 +47,9 @@ testRoute = withResource acquirePool releasePool \getPool ->
       resp <- Test.get "/notfound"
       assertStatus 404 resp
       assertBodyContains "Not found" resp
+  , testWai (appWithPool getPool) "Method mismatch returns 405" do
+      resp <- Test.srequest $ Test.buildRequestWithHeaders POST "/" "" []
+      assertStatus 405 resp
   , testWai (appWithPool getPool) "GET /todos" do
       resp <- Test.get "/todos"
       assertStatus 200 resp
@@ -62,23 +65,6 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "hx-post=\"/todos\"" resp
       assertBodyContains "class=\"todo-list\"" resp
       assertBodyContains "Double-click to edit, Enter to add" resp
-      assertBodyDoesNotContain "data-hx-json" resp
-      assertBodyDoesNotContain "form-json.js" resp
-  , testWai (appWithPool getPool) "JSON clients use the same todo routes" do
-      pool <- liftIO getPool
-      _ <- liftIO $ runDb pool truncateTodosSession
-
-      respAdd <- postJsonApi "/todos" "{\"title\":\"JSON Task\"}"
-      assertStatus 200 respAdd
-      assertContentTypePrefix "application/json" respAdd
-      assertBodyContains "\"mutation\":\"created\"" respAdd
-      assertBodyContains "\"title\":\"JSON Task\"" respAdd
-
-      respPage <- getJson "/todos"
-      assertStatus 200 respPage
-      assertContentTypePrefix "application/json" respPage
-      assertBodyContains "\"todos\"" respPage
-      assertBodyContains "\"title\":\"JSON Task\"" respPage
   , testWai (appWithPool getPool) "user can manage todos through htmx routes" do
       pool <- liftIO getPool
       _ <- liftIO $ runDb pool truncateTodosSession
@@ -192,48 +178,11 @@ appWithPool getPool req respond = do
   pool <- getPool
   app pool req respond
 
-jsonHtmlHeaders :: RequestHeaders
-jsonHtmlHeaders =
-  [ ("Content-Type", "application/json")
-  , ("Accept", "text/html")
-  ]
-
-jsonApiHeaders :: RequestHeaders
-jsonApiHeaders =
-  [ ("Content-Type", "application/json")
-  , ("Accept", "application/json")
-  ]
-
-acceptJsonHeaders :: RequestHeaders
-acceptJsonHeaders =
-  [ ("Accept", "application/json")
-  ]
-
 formHtmlHeaders :: RequestHeaders
 formHtmlHeaders =
   [ ("Content-Type", "application/x-www-form-urlencoded")
   , ("Accept", "text/html")
   ]
-
-postJson :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
-postJson path body =
-  Test.postWithHeaders path body jsonHtmlHeaders
-
-postJsonApi :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
-postJsonApi path body =
-  Test.postWithHeaders path body jsonApiHeaders
-
-putJson :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
-putJson path body =
-  Test.srequest $ Test.buildRequestWithHeaders PUT path body jsonHtmlHeaders
-
-patchJson :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
-patchJson path body =
-  Test.srequest $ Test.buildRequestWithHeaders PATCH path body jsonHtmlHeaders
-
-deleteJson :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
-deleteJson path body =
-  Test.srequest $ Test.buildRequestWithHeaders DELETE path body jsonHtmlHeaders
 
 postForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
 postForm path body =
@@ -250,10 +199,6 @@ patchForm path body =
 deleteForm :: ByteString -> LBS.ByteString -> Test.Session WaiTest.SResponse
 deleteForm path body =
   Test.srequest $ Test.buildRequestWithHeaders DELETE path body formHtmlHeaders
-
-getJson :: ByteString -> Test.Session WaiTest.SResponse
-getJson path =
-  Test.srequest $ Test.buildRequestWithHeaders GET path "" acceptJsonHeaders
 
 assertContentTypePrefix :: ByteString -> WaiTest.SResponse -> Test.Session ()
 assertContentTypePrefix expected response =
