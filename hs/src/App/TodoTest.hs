@@ -24,7 +24,8 @@ import Test.Tasty.HUnit
 import Test.Tasty.Wai hiding (Session, head)
 import Test.Tasty.Wai qualified as Test
 
-import App (app)
+import App (app, appWithTodoGenerator)
+
 import App.Todo
 
 tasty :: TestTree -> IO ()
@@ -64,6 +65,42 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "hx-post=\"/todos\"" resp
       assertBodyContains "class=\"todo-list\"" resp
       assertBodyContains "Double-click to edit, Enter to add" resp
+      assertBodyContains "I feel lucky today" resp
+      assertBodyContains "hx-post=\"/todos/generate\"" resp
+      assertBodyContains "type=\"button\"" resp
+  , testWai (appWithPoolAndGenerator getPool (const (pure (Right ["Buy milk", "Write plan", "Pack lunch"])))) "POST /todos/generate inserts generated titles" do
+      pool <- liftIO getPool
+      _ <- liftIO $ runDb pool truncateTodosSession
+      resp <- postForm "/todos/generate" "title=Plan+my+morning"
+      assertStatus 200 resp
+      assertBodyContains "id=\"add-form\"" resp
+      assertBodyContains "I feel lucky today" resp
+      assertBodyContains "hx-swap-oob=\"outerMorph\"" resp
+      assertBodyContains "Buy milk" resp
+      assertBodyContains "Write plan" resp
+      assertBodyContains "Pack lunch" resp
+      respList <- Test.get "/todos/list"
+      assertStatus 200 respList
+      assertBodyContains "Buy milk" respList
+      assertBodyContains "Write plan" respList
+      assertBodyContains "Pack lunch" respList
+  , testWai (appWithPoolAndGenerator getPool (const (pure (Right ["Task A", "", "task a", "Task B"])))) "POST /todos/generate filters duplicates and empty" do
+      pool <- liftIO getPool
+      _ <- liftIO $ runDb pool truncateTodosSession
+      _ <- postForm "/todos" "title=Task+A"
+      respGen <- postForm "/todos/generate" "title=Generate+tasks"
+      assertStatus 200 respGen
+      respList <- Test.get "/todos/list"
+      _todoIds <- liftIO $ requireTodoIds "generated duplicate filtering" 2 respList
+      assertBodyContains "Task A" respList
+      assertBodyContains "Task B" respList
+  , testWai (appWithPoolAndGenerator getPool (const (pure (Left "boom")))) "POST /todos/generate failure renders inline message" do
+      pool <- liftIO getPool
+      _ <- liftIO $ runDb pool truncateTodosSession
+      resp <- postForm "/todos/generate" "title=test"
+      assertStatus 200 resp
+      assertBodyContains "Could not generate todos; check DEEPSEEK_API_KEY and try again." resp
+      assertBodyContains "I feel lucky today" resp
   , testWai (appWithPool getPool) "user can manage todos through htmx routes" do
       pool <- liftIO getPool
       _ <- liftIO $ runDb pool truncateTodosSession
@@ -176,6 +213,11 @@ appWithPool :: IO Pool -> Application
 appWithPool getPool req respond = do
   pool <- getPool
   app pool req respond
+
+appWithPoolAndGenerator :: IO Pool -> GenerateTodoTitles -> Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
+appWithPoolAndGenerator getPool generate req respond = do
+  pool <- getPool
+  appWithTodoGenerator generate pool req respond
 
 formHtmlHeaders :: RequestHeaders
 formHtmlHeaders =

@@ -31,6 +31,9 @@ module App.Todo
   , addTodoSession
   , toggleTodoSession
   , clearCompletedSession
+  , GenerateTodoTitles
+  , generateTodos
+  , graceGenerateTodoTitles
   ) where
 
 import Data.ByteString.Lazy qualified as LBS
@@ -39,7 +42,10 @@ import Data.Vector qualified as V
 import Prelude hiding (id)
 
 import Colog (logInfo)
+import Control.Exception qualified as Exception (SomeException, try)
 import Database
+import Grace.Input qualified as Grace.Input (Input (Code))
+import Grace.Interpret qualified as Grace (loadWith, (<~))
 import Hasql.TH
 import Htmx
 import Http (RouteHandler, runDbOr500, throwRouteError)
@@ -72,6 +78,17 @@ instance FromForm AddTodoRequest where
       <$> parseUnique "title" form
       <*> fromForm form
 
+data GenerateTodosRequest = GenerateTodosRequest
+  { generatePrompt :: Text
+  , generateState  :: TodoListState
+  } deriving (Eq, Show)
+
+instance FromForm GenerateTodosRequest where
+  fromForm form =
+    GenerateTodosRequest
+      <$> parseUnique "title" form
+      <*> fromForm form
+
 data UpdateTodoRequest = UpdateTodoRequest
   { updateTitle :: Text
   , updateState :: TodoListState
@@ -94,6 +111,10 @@ data TodoMutationStatus
   | TodoCleared
   | TodoUpdated
   | TodoUpdateDuplicate
+  | TodoGenerated
+  | TodoGenerationEmptyPrompt
+  | TodoGenerationNoResults
+  | TodoGenerationFailed
   deriving (Eq, Show)
 
 data TodosView = TodosView
@@ -141,16 +162,23 @@ data TodoMutationView = TodoMutationView
 
 renderTodoMutationViewHtml :: TodoMutationView -> LBS.ByteString
 renderTodoMutationViewHtml mutationResult = renderBS case mutationResult.mutation of
-  TodoCreated         -> addResponseHtml
-  TodoDuplicate       -> addResponseHtml
-  TodoEmptyTitle      -> addResponseHtml
-  TodoUpdated         -> todoListHtml >> focusTodoInputScript
-  TodoUpdateDuplicate -> todoListHtml >> maybe mempty focusEditInputScript mutationResult.editingTodoId
-  _                   -> todoListHtml
+  TodoCreated               -> addResponseHtml
+  TodoDuplicate             -> addResponseHtml
+  TodoEmptyTitle            -> addResponseHtml
+  TodoUpdated               -> todoListHtml >> focusTodoInputScript
+  TodoUpdateDuplicate       -> todoListHtml >> maybe mempty focusEditInputScript mutationResult.editingTodoId
+  TodoGenerated             -> generationResponseHtml Nothing
+  TodoGenerationEmptyPrompt -> generationResponseHtml (Just "Enter something before feeling lucky.")
+  TodoGenerationNoResults   -> generationResponseHtml (Just "Grace did not return any new todo titles.")
+  TodoGenerationFailed      -> generationResponseHtml (Just "Could not generate todos; check DEEPSEEK_API_KEY and try again.")
+  _                         -> todoListHtml
   where
     addResponseHtml = do
-      todoAddForm
+      todoAddForm Nothing
       todoListSectionHighlightedOob mutationResult.todos "" mutationResult.filterBy mutationResult.highlightedTodoId True
+    generationResponseHtml message = do
+      todoAddForm message
+      todoListSectionHighlightedOob mutationResult.todos "" mutationResult.filterBy Nothing True
     todoListHtml =
       todoListSectionWithOptions
         mutationResult.todos
@@ -228,6 +256,86 @@ addTodo pool request = do
     , editingTodoId = Nothing
     , editingTitle = Nothing
     }
+
+type GenerateTodoTitles = Text -> RouteHandler (Either Text [Text])
+
+generateTodos :: HasCallStack => Pool -> GenerateTodoTitles -> GenerateTodosRequest -> RouteHandler TodoMutationView
+generateTodos pool generate request = do
+  let normalizedPrompt = normalizeTitle request.generatePrompt
+      mkView todos mutation = TodoMutationView
+        { todos
+        , filterBy = stateFilterText request.generateState
+        , searchTitle = ""
+        , mutation
+        , highlightedTodoId = Nothing
+        , editingTodoId = Nothing
+        , editingTitle = Nothing
+        }
+  existingItems <- runDbOr500 pool getTodosSession
+  if T.null normalizedPrompt
+    then pure $ mkView existingItems TodoGenerationEmptyPrompt
+    else do
+      result <- generate normalizedPrompt
+      case result of
+        Left _ -> do
+          infoLog "Grace todo generation failed"
+          pure $ mkView existingItems TodoGenerationFailed
+        Right generatedTitles -> do
+          let insertable = insertableGeneratedTitles existingItems generatedTitles
+              titlesToInsert = take 3 insertable
+          unless (null titlesToInsert) $
+            traverse_ (runDbOr500 pool . addTodoSession) titlesToInsert
+          refreshedItems <- runDbOr500 pool getTodosSession
+          let mutationStatus =
+                if null titlesToInsert
+                  then TodoGenerationNoResults
+                  else TodoGenerated
+          pure $ mkView refreshedItems mutationStatus
+
+insertableGeneratedTitles :: [Todo] -> [Text] -> [Text]
+insertableGeneratedTitles existingItems =
+  take 3
+    . filter (not . T.null)
+    . filter
+        ( \title ->
+            let key = normalizeTitleKey title
+             in not $ any ((== key) . normalizeTitleKey . (.title)) existingItems
+        )
+    . fmap normalizeTitle
+    . uniqueVia normalizeTitleKey
+  where
+    uniqueVia :: Ord b => (a -> b) -> [a] -> [a]
+    uniqueVia f = go []
+      where
+        go _ [] = []
+        go seen (x : xs)
+          | f x `elem` seen = go seen xs
+          | otherwise = x : go (f x : seen) xs
+
+graceGenerateTodoTitles :: HasCallStack => GenerateTodoTitles
+graceGenerateTodoTitles promptText = do
+  let graceSource = T.unlines
+        [ "let key = env:DEEPSEEK_API_KEY : Key"
+        , "let model = \"deepseek-v4-flash\""
+        , "in  prompt"
+        , "      { key"
+        , "      , model"
+        , "      , text: \""
+        , "          Generate exactly 3 concise TodoMVC todo item titles for this request:"
+        , ""
+        , "          ${todoPrompt}"
+        , ""
+        , "          Return only actionable titles. Do not include numbering, bullets, or explanations."
+        , "          \""
+        , "      } : List Text"
+        ]
+  result <- liftIO $ Exception.try @Exception.SomeException $
+    Grace.loadWith ["todoPrompt" Grace.<~ promptText] (Grace.Input.Code "todo-generation" graceSource)
+  case result of
+    Left exc -> do
+      infoLog $ "Grace generation failed: " <> T.show exc
+      pure $ Left "grace generation failed"
+    Right titles -> pure $ Right titles
 
 toggleTodo :: HasCallStack => Pool -> Int64 -> TodoListState -> RouteHandler TodoMutationView
 toggleTodo pool todoId listState = do
@@ -394,7 +502,7 @@ todoPage items filterBy =
     <section class="todoapp">
       <header class="header">
         <h1>todos</h1>
-        {todoAddForm}
+        {todoAddForm Nothing}
       </header>
       {todoListSection items "" filterBy}
       <footer class="info">
@@ -421,11 +529,45 @@ todoHead = [hsx|
     .todo-list li.duplicate-flash {
       animation: duplicate-flash 0.9s ease;
     }
+
+    .input-button-row {
+      display: flex;
+      width: 100%;
+    }
+
+    .input-button-row .new-todo {
+      flex: 4;
+    }
+
+    .input-button-row .lucky-todo {
+      flex: 1;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      border-left: 1px solid #e6e6e6;
+      background: #f5f5f5;
+      color: #777;
+      outline: none;
+    }
+
+    .input-button-row .lucky-todo:hover {
+      background: #e8e8e8;
+    }
+
+    .input-button-row .lucky-todo:active {
+      background: #ddd;
+    }
+
+    .generation-feedback {
+      padding-left: 60px;
+      font-size: 14px;
+      color: #999;
+    }
   </style>
 |]
 
-todoAddForm :: Html ()
-todoAddForm = [hsx|
+todoAddForm :: Maybe Text -> Html ()
+todoAddForm message = [hsx|
   <form
     id="add-form"
     hx-post="/todos"
@@ -433,25 +575,44 @@ todoAddForm = [hsx|
     hx-swap="outerHTML"
     hx-include={addFormFilterInclude}
   >
-    <input
-      id="todo-input"
-      class="new-todo"
-      type="text"
-      aria-label="New todo"
-      name="title"
-      placeholder="What needs to be done?"
-      autocomplete="off"
-      required
-      autofocus
-      hx-get="/todos/list"
-      hx-trigger="input changed delay:500ms"
-      hx-include={addFormFilterInclude}
-      hx-target="#todo-list"
-      hx-swap={listSwap}
-      hx-sync="closest form:abort"
-    >
+    <div class="input-button-row">
+      <input
+        id="todo-input"
+        class="new-todo"
+        type="text"
+        aria-label="New todo"
+        name="title"
+        placeholder="What needs to be done?"
+        autocomplete="off"
+        required
+        autofocus
+        hx-get="/todos/list"
+        hx-trigger="input changed delay:500ms"
+        hx-include={addFormFilterInclude}
+        hx-target="#todo-list"
+        hx-swap={listSwap}
+        hx-sync="closest form:abort"
+      >
+      <button
+        type="button"
+        class="lucky-todo"
+        hx-post="/todos/generate"
+        hx-include="#add-form, #todo-list-form input[name='filter']"
+        hx-target="#add-form"
+        hx-swap="outerHTML"
+      >
+        I feel lucky today
+      </button>
+    </div>
+    <div class="generation-message">
+      {generationMessage}
+    </div>
   </form>
 |]
+  where
+    generationMessage = case message of
+      Nothing  -> mempty
+      Just msg -> [hsx|<span class="generation-feedback">{msg}</span>|]
 
 todoEditForm :: Todo -> Html ()
 todoEditForm todo = todoEditFormWithTitle todo todo.title

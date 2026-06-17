@@ -7,6 +7,7 @@
 
 module App
   ( app
+  , appWithTodoGenerator
   ) where
 
 import Data.ByteString.Lazy qualified as LBS
@@ -18,7 +19,6 @@ import Network.HTTP.Types (StdMethod (..), status200, status404)
 import Network.Wai (Application, Request, Response, ResponseReceived)
 import Prelude hiding (id)
 import Web.FormUrlEncoded (FromForm)
-
 import App.Todo
 
 data AppRoute
@@ -31,6 +31,7 @@ data AppRoute
   | DeleteTodoAction { todoId :: Integer, todoFilter :: Maybe Text }
   | EditTodoAction { todoId :: Integer }
   | UpdateTodoAction { todoId :: Integer }
+  | GenerateTodosAction
   deriving (Eq, Show)
 
 $(pure [])
@@ -44,38 +45,44 @@ PATCH /todos/{id}             ToggleTodoAction { todoId = #id }
 DELETE /todos/{id}?filter     DeleteTodoAction { todoId = #id, todoFilter = #filter }
 GET /todos/{id}/edit          EditTodoAction { todoId = #id }
 PUT /todos/{id}               UpdateTodoAction { todoId = #id }
+POST /todos/generate          GenerateTodosAction
 |]
 
 app :: Pool -> Application
-app pool = routeTrieMiddleware (appRouteTrie (dispatch pool)) notFoundApplication
+app = appWithTodoGenerator graceGenerateTodoTitles
 
-dispatch :: Pool -> AppRoute -> Application
-dispatch _pool HomeAction _req respond =
+appWithTodoGenerator :: GenerateTodoTitles -> Pool -> Application
+appWithTodoGenerator generate pool = routeTrieMiddleware (appRouteTrie (dispatch generate pool)) notFoundApplication
+
+dispatch :: GenerateTodoTitles -> Pool -> AppRoute -> Application
+dispatch _generate _pool HomeAction _req respond =
   respond $ htmlResponse status200 $ renderBS index
-dispatch pool (TodosPageAction f t) req respond =
+dispatch _generate pool (TodosPageAction f t) req respond =
   runViewApplication renderTodosViewHtml (getTodosPage pool f t) req respond
-dispatch pool (TodoListAction f t) req respond =
+dispatch _generate pool (TodoListAction f t) req respond =
   runViewApplication renderTodoListViewHtml (getTodoListPartial pool f t) req respond
-dispatch pool AddTodoAction req respond =
+dispatch _generate pool AddTodoAction req respond =
   withParsedBody req (addTodo pool) renderTodoMutationViewHtml respond
-dispatch pool ClearTodosAction req respond =
+dispatch _generate pool ClearTodosAction req respond =
   withParsedBody req (clearCompleted pool) renderTodoMutationViewHtml respond
-dispatch pool (ToggleTodoAction rawId) req respond =
+dispatch _generate pool (ToggleTodoAction rawId) req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
     Right todoId  -> withParsedBody req (toggleTodo pool todoId) renderTodoMutationViewHtml respond
-dispatch pool (DeleteTodoAction rawId f) _req respond =
+dispatch _generate pool (DeleteTodoAction rawId f) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
     Right todoId  -> runViewApplication renderTodoMutationViewHtml (deleteTodo pool todoId f) _req respond
-dispatch pool (EditTodoAction rawId) _req respond =
+dispatch _generate pool (EditTodoAction rawId) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
     Right todoId  -> runViewApplication renderTodoEditViewHtml (editTodoForm pool todoId) _req respond
-dispatch pool (UpdateTodoAction rawId) req respond =
+dispatch _generate pool (UpdateTodoAction rawId) req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
     Right todoId  -> withParsedBody req (updateTodo pool todoId) renderTodoMutationViewHtml respond
+dispatch generate pool GenerateTodosAction req respond =
+  withParsedBody req (generateTodos pool generate) renderTodoMutationViewHtml respond
 
 routeTodoIdOr404 :: Integer -> Either Response Int64
 routeTodoIdOr404 rawId =
