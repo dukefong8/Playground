@@ -42,6 +42,11 @@ transitive Guardrails and Malli copies; Malli 0.20.1 is pinned directly to
 match Guardrails 1.3.3. The project requires Jolt 0.8.2 or newer, which natively
 implements the three-argument `ns-resolve` used by Guardrails.
 
+Jolt 0.8.6 no longer enables the `:bb` reader feature by default, so
+`deps.edn` explicitly opts in with `:jolt/features [:bb]`. This lets
+fulcro-spec use its Babashka-compatible branches, avoiding its JVM-only
+`cljs.test` dependency.
+
 One project-local shim runs before the upstream test namespaces load:
 
 - fulcro-spec 3.2.9's generated `Throwable` class token is converted back to a

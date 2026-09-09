@@ -1,6 +1,9 @@
 {:paths ["src"]
 
- :jolt/min-version "0.8.2"
+ :jolt/min-version "0.8.6"
+
+ ;; fulcro-spec's :bb branches avoid JVM-only ClojureScript test machinery.
+ :jolt/features [:bb]
 
  ;; Guardrails and Truss are declared statically so this project can be run
  ;; directly with Jolt's normal deps.edn resolution.
