@@ -1,5 +1,7 @@
 {:paths ["src"]
 
+ :jolt/min-version "0.8.2"
+
  ;; Guardrails and Truss are declared statically so this project can be run
  ;; directly with Jolt's normal deps.edn resolution.
  :deps {org.clojure/spec.alpha
@@ -22,7 +24,8 @@
 
         io.github.jolt-lang/time
         {:git/url "https://github.com/jolt-lang/time.git"
-         :git/sha "91cef5b692c624806ea92ba280200162314cdb52"}}
+         :git/tag "v0.0.9"
+         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}}
 
  :aliases {:test {:extra-paths ["test"]
                   :extra-deps {fulcrologic/fulcro-spec
@@ -32,4 +35,4 @@
                                 :exclusions [com.fulcrologic/guardrails metosin/malli]}}
                   :main-opts ["-m" "jolt.guardrails.test-runner"]}}
 
- :tasks {test "jolt -M:test"}}
+ :tasks {test "GUARDRAILS_ENABLED=true jolt -M:test"}}

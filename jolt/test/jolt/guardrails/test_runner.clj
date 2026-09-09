@@ -2,9 +2,9 @@
   (:require [clojure.test :as test]
             [jolt.guardrails.bootstrap]))
 
-;; Keep bootstrap and the ns-resolve shim ahead of upstream macro expansion.
- (require 'jolt.guardrails.add-deps-test
-         'jolt.guardrails.ns-resolve-shim-test
+;; Keep bootstrap ahead of upstream macro expansion.
+(require 'jolt.guardrails.add-deps-test
+         'jolt.guardrails.bootstrap-test
          'jolt.guardrails.fulcro-spec-shim-test
          'com.fulcrologic.guardrails.config-spec
          'com.fulcrologic.guardrails.core-spec
@@ -17,7 +17,7 @@
 
 (def test-namespaces
   '[jolt.guardrails.add-deps-test
-    jolt.guardrails.ns-resolve-shim-test
+    jolt.guardrails.bootstrap-test
     jolt.guardrails.fulcro-spec-shim-test
     com.fulcrologic.guardrails.config-spec
     com.fulcrologic.guardrails.core-spec

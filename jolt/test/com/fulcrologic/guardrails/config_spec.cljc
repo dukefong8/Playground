@@ -74,11 +74,11 @@
                                   ps       (PrintStream. baos)
                                   original System/err]
                               (System/setErr ps)
-                              (try
-                                (f)
-                                (finally
-                                  (System/setErr original)))
-                              (.toString baos)))]
+                              (let [result (try
+                                             (f)
+                                             (finally
+                                               (System/setErr original)))]
+                                [result (.toString baos)])))]
        (try
          (component "Valid modes with keyword syntax"
            (System/setProperty "guardrails.mode" ":pro")
@@ -109,8 +109,7 @@
 
          (component "Invalid mode defaults to :runtime with warning"
            (System/setProperty "guardrails.mode" ":invalid")
-           (let [stderr (capture-stderr #(c/get-env-config false))
-                 cfg    (c/get-env-config false)]
+           (let [[cfg stderr] (capture-stderr #(c/get-env-config false))]
              (assertions
                "Defaults to :runtime"
                (c/mode cfg) => :runtime

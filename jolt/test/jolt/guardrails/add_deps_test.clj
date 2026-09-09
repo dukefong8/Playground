@@ -1,6 +1,6 @@
 (ns jolt.guardrails.add-deps-test
   (:require [clojure.test :refer [deftest is testing]]
-            [jolt.guardrails.bootstrap :as bootstrap]
+            [jolt.guardrails.bootstrap]
             [com.fulcrologic.guardrails.core :as guardrails]
             [taoensso.truss :as truss]))
 

@@ -1,8 +1,7 @@
 (ns jolt.guardrails.bootstrap
-  "Sets Guardrails properties and installs test-time compatibility shims."
+  "Sets Guardrails properties and installs the test-time compatibility shim."
   (:require [clojure.walk :as walk]
-            [fulcro-spec.assertions :as assertions]
-            [jolt.guardrails.ns-resolve-shim]))
+            [fulcro-spec.assertions :as assertions]))
 
 (defonce ^:private fulcro-triple->assertion
   assertions/triple->assertion)
@@ -21,4 +20,8 @@
 
 ;; Match Guardrails' upstream JVM test invocation.
 (System/setProperty "guardrails.config" "guardrails-test.edn")
-(System/setProperty "guardrails.enabled" "true")
+(let [enabled (System/getenv "GUARDRAILS_ENABLED")]
+  (if (or (= "" enabled) (= "false" enabled))
+    (System/clearProperty "guardrails.enabled")
+    (when enabled
+      (System/setProperty "guardrails.enabled" enabled))))
