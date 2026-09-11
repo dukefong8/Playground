@@ -1,0 +1,22 @@
+(ns cognitect.transit
+  (:require [jolt.transit :as transit]))
+
+(defn reader
+  ([in _] in)
+  ([in _ _] in))
+
+(defn writer
+  ([out _] out)
+  ([out _ _] out))
+
+(defn read [in]
+  (transit/read (slurp in)))
+
+(defn write [out value]
+  (.write out (.getBytes (transit/write value) "UTF-8"))
+  nil)
+
+(defn read-handler [from-rep] from-rep)
+(defn read-handler-map [handlers] handlers)
+(defn write-handler [tag-fn rep-fn] [tag-fn rep-fn])
+(defn write-handler-map [handlers] handlers)

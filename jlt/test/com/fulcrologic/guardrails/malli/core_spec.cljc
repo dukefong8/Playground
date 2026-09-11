@@ -6,9 +6,10 @@
    [malli.core :as m]))
 
 #?(:clj
-   (do
-     (System/setProperty "guardrails.enabled" "")
-     (System/setProperty "guardrails.config" "guardrails-test.edn")))
+   (when-not (= "false" (System/getenv "GUARDRAILS_ENABLED"))
+     (do
+       (System/setProperty "guardrails.enabled" "")
+       (System/setProperty "guardrails.config" "guardrails-test.edn"))))
 
 (>def ::foo [:and :int [:>= 0]])
 

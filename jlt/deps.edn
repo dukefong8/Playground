@@ -7,7 +7,19 @@
 
  ;; Guardrails and Truss are declared statically so this project can be run
  ;; directly with Jolt's normal deps.edn resolution.
- :deps {org.clojure/spec.alpha
+ :deps {babashka/babashka.pods
+        {:mvn/version "0.2.0"
+         :exclusions [cheshire/cheshire]}
+
+        org.clojure/data.json
+        {:mvn/version "2.5.0"}
+
+        jolt-lang/transit-jolt
+        {:git/url "https://github.com/jolt-lang/transit-jolt"
+         :git/tag "v0.1.0"
+         :git/sha "909255b3bbdc04bbd1c7782b4056f8d2f082ec8d"}
+
+        org.clojure/spec.alpha
         {:mvn/version "0.5.238"}
 
         org.clojure/core.specs.alpha
@@ -21,6 +33,9 @@
 
         com.taoensso/truss
         {:mvn/version "2.5.1"}
+
+        com.taoensso/tufte
+        {:mvn/version "3.1.0"}
 
         metosin/malli
         {:mvn/version "0.20.1"}
@@ -36,6 +51,8 @@
                                 ;; fulcro-spec is test-only and otherwise brings
                                 ;; an older Guardrails and Malli copy.
                                 :exclusions [com.fulcrologic/guardrails metosin/malli]}}
-                  :main-opts ["-m" "jolt.guardrails.test-runner"]}}
+                  :main-opts ["-m" "jolt.test-runner"]}}
 
- :tasks {test "GUARDRAILS_ENABLED=true jolt -M:test"}}
+ ;; Guardrails instrumentation depends on properties at macro-expansion time.
+ ;; Cached namespaces can retain checks compiled with a different configuration.
+ :tasks {test "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"}}
