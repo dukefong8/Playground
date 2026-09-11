@@ -9,10 +9,27 @@ Jolt. Guardrails tests come from upstream tag
 Run the Guardrails test suite (the task explicitly enables Guardrails):
 
 ```sh
-jolt test
+./jolt test
 ```
 
-Expected result: `Ran 50 tests. 384 assertions passed, 0 failures, 0 errors.`
+Expected result: `Ran 63 tests. 701 assertions passed, 0 failures, 0 errors.`
+
+To build with Guardrails disabled, use the same optimized entry point with
+`GUARDRAILS_ENABLED=false`:
+
+```sh
+JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=false ./jolt -M:test build -m jolt.test-runner --opt
+```
+
+Expected result: `Ran 27 tests. 568 assertions passed, 0 failures, 0 errors.`
+Guardrails-specific behavior specs are excluded in this mode, while the
+bootstrap test verifies that macro-expanded checks are actually absent.
+
+The test task sets `JOLT_AOT_CACHE=0` because Guardrails decides whether to emit
+validation code during macro expansion. Jolt 0.8.6's AOT cache can reuse a
+namespace compiled with different Guardrails settings, leaving checks disabled
+even when `GUARDRAILS_ENABLED=true`. Compiling from source on each test run
+ensures the test configuration takes effect without deleting the shared cache.
 
 ## Enabling Guardrails
 
@@ -25,7 +42,7 @@ namespace. Guardrails is disabled by default; enable it with
 `GUARDRAILS_ENABLED`:
 
 ```sh
-GUARDRAILS_ENABLED=true jolt test
+./jolt test
 ```
 
 An unset, empty, or `false` value leaves the property unset. Guardrails treats

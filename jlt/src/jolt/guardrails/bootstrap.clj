@@ -6,6 +6,14 @@
 (defonce ^:private fulcro-triple->assertion
   assertions/triple->assertion)
 
+(defn enabled?
+  "Whether Guardrails was explicitly enabled for this process."
+  []
+  (let [value (System/getenv "GUARDRAILS_ENABLED")]
+    (and value
+         (not= "" value)
+         (not= "false" value))))
+
 (defn- symbolic-throwable [form]
   (if (= Throwable form)
     'java.lang.Throwable

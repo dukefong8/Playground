@@ -1,0 +1,13 @@
+(ns cheshire.core
+  (:require [clojure.data.json :as json]))
+
+(defn parse-string-strict
+  ([s] (json/read-str s))
+  ([s key-fn]
+   (if (true? key-fn)
+     (json/read-str s :key-fn keyword)
+     (json/read-str s :key-fn key-fn))))
+
+(defn generate-string
+  ([value] (json/write-str value))
+  ([value _options] (json/write-str value)))
