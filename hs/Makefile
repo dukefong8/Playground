@@ -11,10 +11,11 @@ EXE  := $(shell basename $(MAIN) .Main)
 dev:
 	ghciwatch --clear --no-interrupt-reloads \
 		--command ghci-$(GHC) \
+		--enable-eval --watch . \
 		--error-file ghcid.txt \
 		--restart-glob Makefile \
 		--restart-glob .ghc.environment.* \
-		--enable-eval --watch .
+		--after-reload-shell 'async: bash coghci.sh'
 
 exe:
 	mkdir -p .build && ln -sf .build .hiefiles && ln -sf .build .hifiles
