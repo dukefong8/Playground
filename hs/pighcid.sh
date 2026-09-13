@@ -35,7 +35,7 @@ fi
 trap 'rm -rf -- "${WORK:?}"' EXIT
 echo $$ >"$WORK/pid"
 
-PROMPT="Make minimal edit to fix error in ghcid.txt STOP when ghcid.txt says All good. To learn more context, put a hole _ where the unknown goes and let the reload report what GHC expects there (expected type, relevant bindings). Use ghci -e ':hoogle NAME' / ':hdoc NAME', and :add <file> before :browse/:info/:type/:instances (pipe: printf ':add src/Foo.hs\n:info NAME\n' | ghci); qualify other names as Module.name. DO NOT run cabal/stack/make commands! End your reply with exactly one line, either 'FIXED: <the fix you made>' or 'STOPPED: <what you changed and why the error remains>'."
+PROMPT="Make minimal edit fix error in ghcid.txt STOP when ghcid.txt says All good. Use hole _ where the unknown goes and let the reload report what GHC expects there (expected type, relevant bindings). DO NOT run cabal/stack/make commands! End your reply with exactly one line (be concise), either 'FIXED: <the fix you made>' or 'STOPPED: <explain why>'."
 
 # Status goes on the status line, and nothing is typed into any pane: the
 # ghciwatch pane is a TUI, so text arriving there is read as keystrokes and could

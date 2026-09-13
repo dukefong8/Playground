@@ -31,6 +31,7 @@ module App.Todo
   , addTodoSession
   , toggleTodoSession
   , clearCompletedSession
+  , insertableGeneratedTitles
   , GenerateTodoTitles
   , generateTodos
   , graceGenerateTodoTitles
