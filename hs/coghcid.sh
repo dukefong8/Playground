@@ -8,7 +8,7 @@
 set -euo pipefail
 
 GHCID=${GHCID:-ghcid.txt}
-WORK=$PWD/.coghcid           # lock, removed on exit
+WORK=$PWD/.coghcid            # lock, removed on exit
 SESSION=$PWD/.coghcid.session # this project's codex thread, kept between runs
 
 # Where to report: the pane this runs in, which is the ghciwatch pane — ghciwatch
@@ -36,7 +36,7 @@ fi
 trap 'rm -rf -- "${WORK:?}"' EXIT
 echo $$ >"$WORK/pid"
 
-PROMPT="Make minimal edit to fix error in ghcid.txt STOP when ghcid.txt says All good. To learn more context, put a hole _ where the unknown goes and let the reload report what GHC expects there (expected type, relevant bindings). Use ghci -e ':hoogle NAME' / ':hdoc NAME', and :add <file> before :browse/:info/:type/:instances (pipe: printf ':add src/Foo.hs\n:info NAME\n' | ghci); qualify other names as Module.name. DO NOT run cabal/stack/make commands! End your reply with exactly one line, either 'FIXED: <the fix you made>' or 'STOPPED: <what you changed and why the error remains>'."
+PROMPT="Make minimal edit fix error in ghcid.txt STOP when ghcid.txt says All good. Use hole _ where the unknown goes and let the reload report what GHC expects there (expected type, relevant bindings). Use ghci -e ':hoogle TYPE' / ':hdoc NAME', and :add <file> before :browse/:info/:type/:instances (pipe: printf ':add src/Foo.hs\n:info NAME\n' | ghci); qualify other names as Module.name. DO NOT run cabal/stack/make commands! End your reply with exactly one line (be concise), either 'FIXED: <the fix you made>' or 'STOPPED: <explain why>'."
 
 # --disable plugins/hooks drops the harness: ~10k of the ~23k input tokens, none of
 # it useful for a compile error. The compaction limit is a token count, so it does

@@ -7,7 +7,7 @@
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
-module App.TodoTest (tasty, testRoute, testDB) where
+module App.TodoTest (tasty, testRoute, testDB, testGeneratedTitles, testCheckedInt64) where
 
 import Data.ByteString qualified as BS
 import Data.Char (isDigit)
@@ -30,6 +30,7 @@ import Test.Tasty.Wai qualified as Test
 import App (app, appWithTodoGenerator)
 
 import App.Todo
+import Http (checkedInt64)
 
 tasty :: TestTree -> IO ()
 tasty action =
@@ -86,6 +87,36 @@ testDB = withResource acquirePool releasePool $ \getPool ->
         case todos3 of
           Right ts -> length ts @?= 1
           Left err -> assertFailure $ "DB Error: " ++ show err
+    ]
+
+-- $> tasty testGeneratedTitles
+testGeneratedTitles :: TestTree
+testGeneratedTitles =
+  testGroup "insertableGeneratedTitles"
+    [ testCase "drops blanks and case-insensitive duplicates, keeps first 3 novel titles" do
+        let existing  = [Todo 1 "Task A" False]
+            generated = ["", "  ", "Task a", "Task B", "task b", "Task C", "Task D", "Task E"]
+        insertableGeneratedTitles existing generated @?= ["Task B", "Task C", "Task D"]
+    ]
+
+-- $> tasty testCheckedInt64
+testCheckedInt64 :: TestTree
+testCheckedInt64 =
+  testGroup "checkedInt64 range guards"
+    [ testCase "in-range values pass through unchanged" do
+        checkedInt64 0 @?= Just 0
+        checkedInt64 5 @?= Just 5
+        checkedInt64 (-5) @?= Just (-5)
+    , testCase "values exactly at the Int64 bounds still pass through" do
+        checkedInt64 (toInteger (minBound :: Int64)) @?= Just (minBound :: Int64)
+        checkedInt64 (toInteger (maxBound :: Int64)) @?= Just (maxBound :: Int64)
+    , testCase "out-of-range values are rejected, not silently wrapped" do
+        -- Without the guards these wrap (maxBound + 1 becomes minBound) and the
+        -- failure is invisible to ghcid.txt: the build stays green.
+        checkedInt64 (toInteger (maxBound :: Int64) + 1) @?= Nothing
+        checkedInt64 (toInteger (minBound :: Int64) - 1) @?= Nothing
+        checkedInt64 1180591620717411303424 @?= Nothing
+        checkedInt64 (-1180591620717411303424) @?= Nothing
     ]
 
 -- $> tasty testRoute
