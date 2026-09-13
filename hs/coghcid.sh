@@ -4,12 +4,12 @@
 # Runs as a ghciwatch --after-reload-shell hook, so it only ever fires when a
 # reload failed. ghciwatch discards hook output, so each run reports itself on the
 # status line of the tmux window running ghciwatch. For the full conversation:
-#   codex exec resume "$(cat .coghci.session)" 'what did you change so far'
+#   codex exec resume "$(cat .coghcid.session)" 'what did you change so far'
 set -euo pipefail
 
 GHCID=${GHCID:-ghcid.txt}
-WORK=$PWD/.coghci            # lock, removed on exit
-SESSION=$PWD/.coghci.session # this project's codex thread, kept between runs
+WORK=$PWD/.coghcid           # lock, removed on exit
+SESSION=$PWD/.coghcid.session # this project's codex thread, kept between runs
 
 # Where to report: the pane this runs in, which is the ghciwatch pane — ghciwatch
 # starts hooks in the pane it itself runs in. Empty outside tmux, so reporting is
