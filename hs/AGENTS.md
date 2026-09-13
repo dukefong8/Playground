@@ -14,7 +14,13 @@ Always consult BOTH sources before concluding code is clean:
 
 ```bash
 cat ghcid.txt          # check compile errors
-tmux capture-pane -t Work:1 -p -S -30   # check auto-run test output
+# ghciwatch's pane: locate the ghciwatch process, then the pane on its tty. Keyed
+# on the process rather than the pane's foreground command — that reads `make`,
+# since ghciwatch is its child — and not on an index, which moves with the layout.
+GHCW_PANE=$(tmux list-panes -a -F '#{pane_id} #{pane_tty}' | \
+  awk -v t="$(ps -o tty= -p "$(pgrep -x ghciwatch | head -1)" 2>/dev/null | tr -d ' ')" \
+    '$2 ~ t {print $1; exit}')
+tmux capture-pane -t "$GHCW_PANE" -p -S -30   # check auto-run test output
 ```
 
 GHC error codes → <https://errors.haskell.org/index.html>
@@ -30,7 +36,7 @@ touch src/App/TodoTest.hs    # triggers auto-eval of tasty testRoute / tasty tes
 Then check the pane:
 
 ```bash
-tmux capture-pane -t Work:1 -p -S -30 | grep -E "(OK|passed|failed|All)"
+tmux capture-pane -t "$GHCW_PANE" -p -S -30 | grep -E "(OK|passed|failed|All)"
 ```
 
 ## Testing
