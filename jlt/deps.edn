@@ -43,9 +43,17 @@
         io.github.jolt-lang/time
         {:git/url "https://github.com/jolt-lang/time.git"
          :git/tag "v0.0.9"
-         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}}
+         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}
 
- :aliases {:test {:extra-paths ["test"]
+        ;; Developed alongside this project, so a live :local/root rather than a
+        ;; pinned git dep. Jolt drops the clojure/clojurescript coordinates it
+        ;; declares, leaving core.async to resolve to the one Jolt ships.
+        superv.async/superv.async
+        {:local/root "../../superv.async"}}
+
+ :aliases {;; superv.async's own suite rides along on the test path, so one run
+           ;; covers it.
+           :test {:extra-paths ["test" "../../superv.async/test"]
                   :extra-deps {fulcrologic/fulcro-spec
                                {:mvn/version "3.2.9"
                                 ;; fulcro-spec is test-only and otherwise brings
