@@ -1,0 +1,121 @@
+;; Makes (require 'clojure.core.async) self-sufficient, so nothing has to
+;; remember to load the shims first. Jolt's own clojure.core.async has no
+;; impl.protocols namespace and no alt!/alt!!, and only :jolt/replaces lets a
+;; project file win over the copy baked into the binary.
+;;
+;; This delegates rather than replaces. Unlike cheshire/core.jolt — which
+;; supplies cheshire's surface on top of a different library, clojure.data.json —
+;; there is no second implementation of core.async to stand on: the thing being
+;; shadowed IS jolt's stdlib overlay. So the overlay is read back out of the
+;; binary and evaluated here, and the missing pieces go on top. Vendoring a copy
+;; of the overlay instead would silently freeze this project at whatever revision
+;; it was copied from, which is the drift the :jolt/replaces note in deps.edn
+;; warns about.
+;;
+;; io/resource resolves "clojure/core/async.clj" to the embedded source THIS
+;; BINARY carries, not to any checkout on disk, so the overlay a program gets
+;; here is the one the running jolt was built with.
+;;
+;; Why the overlay is loaded by load-string rather than by a :require: a
+;; :require resolves a NAMESPACE, and the namespace holding the implementation we
+;; want is the one being shadowed — requiring it here resolves back to this file.
+;; Shadowing is exactly what stops the real overlay from loading, so re-providing
+;; it has to be spelled out. Upstream has the same shape without the
+;; indirection: its clojure/core/async.clj lists impl.protocols in its own
+;; :require.
+(ns clojure.core.async
+  (:require [clojure.java.io :as io]
+            ;; The protocol half of the gap: ReadPort, which superv.async
+            ;; reaches with (:import (clojure.core.async.impl.protocols
+            ;; ReadPort)). It requires nothing back, so there is no cycle.
+            [clojure.core.async.impl.protocols]))
+
+;; The shim above loads BEFORE this line, which is the shape upstream has: the
+;; overlay's own (ns ...) form re-declares the namespace afterwards and leaves
+;; it in place. The :as alias is spent by the time that happens.
+(load-string (slurp (io/resource "clojure/core/async.clj")))
+
+;; --- alt!/alt!! -------------------------------------------------------------
+;; The other half of the gap. do-alt is upstream's shared expansion for alt! and
+;; alt!!, copied verbatim from clojure/core/async.clj 1.6.681 except that the
+;; alts op is a parameter. It is ordinary Clojure — it threads ports into alts!
+;; and dispatches on the channel that fired — so it needs no Jolt-specific work;
+;; the gap is only that the macros are absent, which the overlay's header states
+;; outright ("Not covered: alts! / alt!"). Jolt's alts! is variadic on
+;; :default/:priority like upstream's, so the expansion applies unchanged.
+;;
+;; The clojure.core/ prefixes are load-bearing, not style. This namespace
+;; :refer-clojure :excludes reduce, map and partition (it defines its own over
+;; channels), so a bare `reduce` here is clojure.core.async/reduce, the channel
+;; operator. Upstream's file carries the same exclusions and writes them the same
+;; way. Nothing else do-alt calls is shadowed.
+(defn do-alt [alts clauses]
+  (assert (even? (count clauses)) "unbalanced clauses")
+  (let [clauses (clojure.core/partition 2 clauses)
+        opt? #(keyword? (first %))
+        opts (filter opt? clauses)
+        clauses (remove opt? clauses)
+        [clauses bindings]
+        (clojure.core/reduce
+         (fn [[clauses bindings] [ports expr]]
+           (let [ports (if (vector? ports) ports [ports])
+                 [ports bindings]
+                 (clojure.core/reduce
+                  (fn [[ports bindings] port]
+                    (if (vector? port)
+                      (let [[port val] port
+                            gp (gensym)
+                            gv (gensym)]
+                        [(conj ports [gp gv]) (conj bindings [gp port] [gv val])])
+                      (let [gp (gensym)]
+                        [(conj ports gp) (conj bindings [gp port])])))
+                  [[] bindings] ports)]
+             [(conj clauses [ports expr]) bindings]))
+         [[] []] clauses)
+        gch (gensym "ch")
+        gret (gensym "ret")]
+    `(let [~@(mapcat identity bindings)
+           [val# ~gch :as ~gret] (~alts [~@(apply concat (clojure.core/map first clauses))]
+                                        ~@(apply concat opts))]
+       (cond
+         ~@(mapcat (fn [[ports expr]]
+                     [`(or ~@(clojure.core/map (fn [port]
+                                                 `(= ~gch ~(if (vector? port) (first port) port)))
+                                               ports))
+                      (if (and (seq? expr) (vector? (first expr)))
+                        `(let [~(first expr) ~gret] ~@(rest expr))
+                        expr)])
+                   clauses)
+         (= ~gch :default) val#))))
+
+;; Plain defmacros, with no intern: this file IS clojure.core.async, so the vars
+;; land where libraries look for them. The intern (and the alter-meta! that
+;; jolt's intern needs, since it does not merge a fn's metadata onto the var the
+;; way the JVM's does) was only ever needed by the namespace this code arrived
+;; from, which had to inject them from outside.
+;;
+;; Guarded so a future jolt alt! wins over this copy rather than being shadowed
+;; by it — the overlay has already loaded above by the time this runs.
+;;
+;; The guard tests :macro, NOT mere existence. A library whose ns form :refers
+;; alt! before this file has run — superv.async's does — leaves jolt with a
+;; dangling refer, which jolt tolerates by interning an UNBOUND var of that
+;; name. So a bare (resolve ...) is already truthy by the time this executes, and
+;; a when-not on it skips the definition, leaving alt! a non-macro var that the
+;; analyzer then treats as an ordinary function call. That failure is invisible
+;; with a warm AOT cache, since superv.async is not recompiled and never re-refers.
+(when-not (:macro (meta (resolve 'clojure.core.async/alt!)))
+  (defmacro alt!
+    "Makes a single choice between one of several channel operations, as if by
+  alts!. Must be called inside a (go ...) block.
+
+  See clojure.core.async/alt! for the clause forms; this is that macro."
+    [& clauses]
+    (do-alt `clojure.core.async/alts! clauses)))
+
+(when-not (:macro (meta (resolve 'clojure.core.async/alt!!)))
+  (defmacro alt!!
+    "Like alt!, except as if by alts!!, will block until completed, and not
+  intended for use in (go ...) blocks."
+    [& clauses]
+    (do-alt `clojure.core.async/alts!! clauses)))

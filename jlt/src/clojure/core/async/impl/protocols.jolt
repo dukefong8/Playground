@@ -1,0 +1,59 @@
+;; Upstream's clojure.core.async.impl.protocols, to the extent superv.async needs
+;; it: ReadPort, and nothing more. Jolt does not ship this namespace and its
+;; channels are native (host/chez/java/async.ss), so the two questions
+;; superv.async asks — (satisfies? ReadPort ch) and (instance? ReadPort ch) — go
+;; unanswered without the four forms below.
+;;
+;; ReadPort alone is deliberate: superv.async imports no other name from here and
+;; calls no protocol method (it reaches for clojure.core.async/take! and friends
+;; directly). WritePort, Channel and MAX-QUEUE-SIZE are upstream's too, and are
+;; not reproduced until something needs them.
+;;
+;; No :require of clojure.core.async, whose names below are spelled in full: its
+;; vars are installed natively at startup and resolve without one, and requiring
+;; it here would close a cycle — src/clojure/core/async.jolt shadows that
+;; namespace and requires this. The alt!/alt!! half lives there, not here.
+;;
+;; Project-local: Jolt ships its stdlib inside the binary, so nothing here is
+;; visible to another project. See README.
+(ns clojure.core.async.impl.protocols
+  (:require [jolt.host]))
+
+(defprotocol ReadPort
+  (take! [port handler] "derefable val if taken, nil if take was enqueued"))
+
+;; A channel reports the class name upstream's ManyToManyChannel has, but nothing
+;; about the interfaces that class implements, so value-host-tags answers
+;; '("Object") for one and no extension on it ever fires. A class-graph row is
+;; what gives the channel that tag. The supers list is empty on purpose: the
+;; class name is the only tag that earns its place, since extend-type below files
+;; its impl under it and dispatch looks up that same tag. (Naming the interfaces
+;; here changes nothing observable either — the dotted spelling that
+;; (instance? ReadPort ch) asks about is answered by the instance check below,
+;; not by this list.)
+(jolt.host/register-class-supers!
+ "clojure.core.async.impl.channels.ManyToManyChannel" [])
+
+;; (:import (clojure.core.async.impl.protocols ReadPort)) does not load a
+;; namespace, and instance-check does not consult the class graph, so the dotted
+;; spelling it lowers to has to be answered directly. The ns/Name form is here
+;; too, for a bare protocol symbol rather than an import.
+;;
+;; `when`, not the `and` it resembles. The registry reads nil as "not mine, ask
+;; the next check" and anything non-nil as final, so an `and` — which returns
+;; false for every name it does not own — would stop the walk and veto the
+;; instance checks of everything registered after this one (slf4j, jolt.socket,
+;; java.time all register checks).
+(clojure.core/__register-instance-check!
+ (fn [class-name val]
+   (when (and (contains? #{"clojure.core.async.impl.protocols.ReadPort"
+                           "clojure.core.async.impl.protocols/ReadPort"}
+                         class-name)
+              (clojure.core.async/chan? val))
+     true)))
+
+;; The method body is load-bearing, not decoration: extend-type with no methods
+;; registers no impl at all, and satisfies? stays false.
+(extend-type clojure.core.async.impl.channels.ManyToManyChannel
+  ReadPort
+  (take! [port f] (clojure.core.async/take! port f)))
