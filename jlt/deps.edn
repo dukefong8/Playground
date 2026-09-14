@@ -5,6 +5,14 @@
  ;; fulcro-spec's :bb branches avoid JVM-only ClojureScript test machinery.
  :jolt/features [:bb]
 
+ ;; superv.async needs core.async's impl.protocols and alt!, neither of which
+ ;; Jolt ships. Claiming the namespace lets src/clojure/core/async.jolt win over
+ ;; Jolt's own copy, so that file can load the overlay Jolt already carries and
+ ;; then load the one shim — which is what lets a bare
+ ;; (require 'clojure.core.async) install everything. See that file for why it
+ ;; delegates rather than replaces.
+ :jolt/replaces [clojure.core.async]
+
  ;; Guardrails and Truss are declared statically so this project can be run
  ;; directly with Jolt's normal deps.edn resolution.
  :deps {babashka/babashka.pods
@@ -43,9 +51,17 @@
         io.github.jolt-lang/time
         {:git/url "https://github.com/jolt-lang/time.git"
          :git/tag "v0.0.9"
-         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}}
+         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}
 
- :aliases {:test {:extra-paths ["test"]
+        ;; Developed alongside this project, so a live :local/root rather than a
+        ;; pinned git dep. Jolt drops the clojure/clojurescript coordinates it
+        ;; declares, leaving core.async to resolve normally.
+        superv.async/superv.async
+        {:local/root "../../superv.async"}}
+
+ :aliases {;; superv.async's own suite rides along on the test path, so one run
+           ;; covers it — see jolt.test-runner for the shim ordering it needs.
+           :test {:extra-paths ["test" "../../superv.async/test"]
                   :extra-deps {fulcrologic/fulcro-spec
                                {:mvn/version "3.2.9"
                                 ;; fulcro-spec is test-only and otherwise brings

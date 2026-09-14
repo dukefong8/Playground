@@ -4,6 +4,8 @@
 
 ;; Keep bootstrap ahead of upstream macro expansion.
 (require 'babashka.pod.datalevin-test
+         'superv.async-test
+         'superv.async-jolt-test
          'jolt.babashka.pod-test
          'jolt.guardrails.add-deps-test
          'jolt.guardrails.bootstrap-test
@@ -23,6 +25,8 @@
                  jolt.guardrails.add-deps-test
                  jolt.guardrails.bootstrap-test
                  jolt.guardrails.fulcro-spec-shim-test
+                 superv.async-test
+                 superv.async-jolt-test
                  taoensso.truss-tests]
         guardrails '[com.fulcrologic.guardrails.config-spec
                      com.fulcrologic.guardrails.core-spec
