@@ -67,6 +67,6 @@
                    ;;               :exclusions [com.fulcrologic/guardrails metosin/malli]}}
                    :main-opts ["-m" "jolt.test-runner"]}}
 
- ;; Guardrails instrumentation depends on properties at macro-expansion time.
- ;; Cached namespaces can retain checks compiled with a different configuration.
- :tasks {test "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"}}
+ ;; Cached namespaces can retain code compiled under different settings, so the
+ ;; optimized build compiles from source on each run.
+ :tasks {test "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.test-runner -o target/release/jlt --opt && ./target/release/jlt"}}
