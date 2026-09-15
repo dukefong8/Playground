@@ -1,6 +1,6 @@
 ---
 name: jolt
-description: Port and debug Clojure libraries on Jolt by preserving their existing Clojure source and adding the smallest required host-class or native FFI seams. Use for Jolt compatibility, Java host interop, Jolt shims, and Jolt nREPL development.
+description: Port and debug Clojure libraries on Jolt by preserving their existing Clojure source and adding the smallest required host-class or native FFI seams. Use for Jolt compatibility, Java host interop, Jolt shims, AOT builds, and Jolt nREPL development.
 ---
 
 # Jolt library development
@@ -41,64 +41,48 @@ Use `jolt.host/tagged-table`, `ref-put!`, and `ref-get` for stateful class
 representations, following Jolt's documented pattern. Register literal JVM class
 and member names exactly as they appear in interop forms.
 
-A `.jolt` namespace is appropriate only for a truly target-specific boundary,
-such as native FFI code that has no JVM implementation. Keep that boundary thin;
-call the existing Clojure code above it.
+A `.jolt` namespace is appropriate only for truly target-specific code with no
+JVM implementation (native FFI). Keep that boundary thin; call the existing
+Clojure code above it.
 
-## Overriding a namespace
+## Do not override namespaces Jolt ships
 
-A different tool from the registrations above. Use it when the gap is a whole
-namespace's *content* — Jolt does not ship it, or ships it missing names — and
-not when the gap is state or ordering.
+Never shadow a namespace the binary already carries (`clojure.core.async` and
+its `impl.*` parts, `clojure.core`, …): resolution consults the baked-in copy
+before project roots, so a project copy is silently ignored, and forcing one
+takes the namespace off its embedded fasl — recompiled from source on every
+startup, drifting from upstream. If Jolt ships it missing names, add host
+seams (above) instead of vendoring the namespace.
 
-- Extension precedence does not do this by itself. `.jolt` > `.clj` > `.cljc` is
-  precedence *within* a source root; `resolve-on-roots` consults the copy baked
-  into the binary before any project root, so a project `foo.jolt` is silently
-  ignored. Declare it with `:jolt/replaces [foo]` in the project's `deps.edn`.
-  Only the project may declare one, it covers the namespace's children, and it is
-  whole-namespace — resolution never falls through to the original. Verify by
-  deleting the key: the file then stops being read at all.
-- Re-provide the original by delegating to it, never by vendoring a copy:
+This covers state gaps too: patching a var with `alter-var-root`, or setting
+properties a library reads during macro expansion, is a bootstrap/ordering
+question, and an override would still need the same patch plus the extra
+namespace, entry, and startup cost.
 
-  ```clojure
-  (load-string (slurp (clojure.java.io/resource "clojure/core/async.clj")))
-  ```
+## AOT build rules
 
-  `io/resource` resolves to what the running binary carries (embedded stdlib) or
-  to the jar entry (a dependency), so it cannot drift from the revision in use. A
-  copy silently freezes the project at whatever was copied.
-- A `:require` cannot express this. It resolves namespace *names*, and the
-  implementation lives in the namespace being shadowed — requiring it resolves
-  back to the shadow itself, where it is a no-op. That is why the re-provide
-  names a path.
-- Definitions placed *after* that evaluation inherit the shadowed namespace's
-  state, including its `:refer-clojure :exclude`. A bare `reduce` inside
-  `clojure.core.async` is the channel operator, not `clojure.core/reduce`;
-  qualify the excluded names.
-- Guard with the right predicate. `(resolve 'a.b/c)` is truthy for a *dangling
-  refer*: Jolt tolerates a ns form that `:refer`s a symbol not yet defined by
-  interning an unbound var. A `when-not` on `resolve` then skips the definition
-  and leaves a non-macro var that the analyzer calls as an ordinary function,
-  surfacing as `Unable to resolve symbol: v__NN__auto ... raised while expanding
-  the ... macro`. Test `(:macro (meta ...))` when installing a macro.
-- Adding vars to a namespace from *another* file needs `intern` plus
-  `alter-meta!` with `:macro true`: Jolt's `intern` does not merge the fn's
-  metadata onto the var the way the JVM's does. When the `.jolt` file *is* that
-  namespace, plain `defmacro`/`defn` land in the right place and none of it is
-  needed.
-- Always re-run cold (`JOLT_AOT_CACHE=0`). The AOT cache hides ordering bugs: a
-  cached namespace is never recompiled, so it never re-refers or re-resolves, and
-  a shim that only works warm passes every test that does not force a rebuild.
-- Overriding takes the namespace off its embedded fasl, so it is recompiled from
-  source on every startup. Measure it (`/usr/bin/time -p`); core.async cost
-  ~0.25 s against ~0.06 s stock.
+JIT green does not imply AOT green. A set that passes under `jolt run` can
+fail to compile, fail at startup, or fail assertions as a binary. Gate every
+slice that must ship as one:
 
-Do not reach for this on a *state* gap. Patching a var with `alter-var-root`, or
-setting properties that another library reads during macro expansion, is a
-bootstrap question rather than a namespace one: an override would still need the
-same patch and would add a re-provided namespace, a `:jolt/replaces` entry and
-the startup cost on top. Properties also have to land before the library reading
-them is *required*, which overriding a later-loading namespace cannot guarantee.
+1. Requires MUST live in the ns form, in load order. A top-level `(require
+   ...)` call is invisible to AOT/DCE static closure: the binary falls back
+   to source resolution at startup and may load the wrong artifact. Observed:
+   the Maven jar's `clojure.core.async` instead of the pre-seeded native one,
+   pulling `impl/timers` → `(DelayQueue.)` boom. Keep the list in sync when
+   adding tests.
+2. Build AND run: `jolt build -m NS -o OUT --opt`, then execute OUT and read
+   its summary. Build success proves nothing about startup or semantics.
+   Capture the binary's real exit code — a `| tail` pipeline masks it.
+3. Isolate per test namespace with temporary `-main` entries (one ns each),
+   build each, delete the entries after. A full-runner failure names no file;
+   per-test builds blame precisely (e.g. the DCE reader dying on guardrails
+   `core.cljc`).
+4. `JOLT_AOT_CACHE=0` for build matrices. A shared AOT cache across sequential
+   `--opt` builds produced broken binaries (`Unknown class t`); determinism
+   first. Always re-run cold for the same reason.
+5. `GUARDRAILS_ENABLED=false` to disable (not unset — Jolt sets the property
+   itself when guardrails is present).
 
 ## TDD loop
 
@@ -117,8 +101,8 @@ Work one missing seam at a time:
    dependency metadata.
 5. Rebuild Jolt when its host source changes, restart the Jolt nREPL, and rerun
    the focused test. This is the GREEN gate.
-6. Run the enclosing Datalevin test namespace, the full canonical JVM API suite,
-   and the static-link/package gates relevant to the slice.
+6. Run the enclosing test namespace, the full canonical suite, and the
+   static-link/package gates relevant to the slice.
 7. Refactor only after the gates pass, then rerun them.
 
 Do not suppress, bypass, or replace a failing behavior to make a gate green.

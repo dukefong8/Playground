@@ -6,7 +6,6 @@
   ;; (instead of the pre-seeded native one), pulls impl/timers, and dies on
   ;; (DelayQueue.). Keep this list in sync when adding tests.
   (:require [clojure.test :as test]
-            [jolt.guardrails.bootstrap]
             [babashka.pod.datalevin-test]
             [superv.async-test]
             [jolt.superv-async-test]
@@ -22,26 +21,30 @@
             [jolt.partial-cps-fibers-test]
             [jolt.superv-cps-test]
             [babashka.pod-test]
-            [jolt.add-deps]
-            [guardrails.bootstrap-test]
-            [guardrails.fulcro-spec-shim-test]
-            [com.fulcrologic.guardrails.config-spec]
-            [com.fulcrologic.guardrails.core-spec]
-            [com.fulcrologic.guardrails.impl.externs-spec]
-            [com.fulcrologic.guardrails.impl.parser-spec]
-            [com.fulcrologic.guardrails.malli.core-spec]
-            [com.fulcrologic.guardrails.malli.fulcro-spec-helpers-spec]
-            [com.fulcrologic.guardrails.utils-spec]
-            [taoensso.truss-tests]))
-;; NOTE: the `aot` branch comments the guardrails entries (and truss-tests)
-;; back out; see deps.edn.
+            ;; [jolt.add-deps]
+            ;; [jolt.guardrails.bootstrap]
+            ;; [guardrails.bootstrap-test]
+            ;; [guardrails.fulcro-spec-shim-test]
+            ;; [com.fulcrologic.guardrails.config-spec]
+            ;; [com.fulcrologic.guardrails.core-spec]
+            ;; [com.fulcrologic.guardrails.impl.externs-spec]
+            ;; [com.fulcrologic.guardrails.impl.parser-spec]
+            ;; [com.fulcrologic.guardrails.malli.core-spec]
+            ;; [com.fulcrologic.guardrails.malli.fulcro-spec-helpers-spec]
+            ;; [com.fulcrologic.guardrails.utils-spec]
+            ;; [taoensso.truss-tests] (AOT: var-args once-evaluation diverges)
+            ))
+;; NOTE: the guardrails entries above (and truss-tests) are commented out on
+;; the `aot` branch: guardrails sources break Jolt's --opt DCE reader.
+;; jolt.add-deps goes with them — it requires jolt.guardrails.bootstrap. The
+;; files stay on disk; re-enable these together with the deps in deps.edn.
 
 (def test-namespaces
   (let [always '[babashka.pod.datalevin-test
                  babashka.pod-test
-                 jolt.add-deps
-                 guardrails.bootstrap-test
-                 guardrails.fulcro-spec-shim-test
+                 ;; jolt.add-deps
+                 ;; guardrails.bootstrap-test
+                 ;; guardrails.fulcro-spec-shim-test
                  superv.async-test
                  jolt.superv-async-test
                  jolt.superv-fibers-test
@@ -54,18 +57,17 @@
                  is.simm.partial-cps.core-async-test
                  jolt.partial-cps-core-async-test
                  jolt.partial-cps-fibers-test
-                 jolt.superv-cps-test
-                 taoensso.truss-tests]
-         guardrails '[com.fulcrologic.guardrails.config-spec
-                      com.fulcrologic.guardrails.core-spec
-                      com.fulcrologic.guardrails.impl.externs-spec
-                      com.fulcrologic.guardrails.impl.parser-spec
-                      com.fulcrologic.guardrails.malli.core-spec
-                      com.fulcrologic.guardrails.malli.fulcro-spec-helpers-spec
-                      com.fulcrologic.guardrails.utils-spec]]
-    (if (jolt.guardrails.bootstrap/enabled?)
-      (into (vec always) guardrails)
-      always)))
+                 jolt.superv-cps-test]
+                 ;; taoensso.truss-tests (AOT: see the require block note)
+         ;; guardrails '[com.fulcrologic.guardrails.config-spec
+         ;;              com.fulcrologic.guardrails.core-spec
+         ;;              com.fulcrologic.guardrails.impl.externs-spec
+         ;;              com.fulcrologic.guardrails.impl.parser-spec
+         ;;              com.fulcrologic.guardrails.malli.core-spec
+         ;;              com.fulcrologic.guardrails.malli.fulcro-spec-helpers-spec
+         ;;              com.fulcrologic.guardrails.utils-spec]
+         ]
+    always))
 
 (defn -main
   "Run the suite. With no args runs everything (the gate). With namespace
