@@ -27,9 +27,9 @@
                      (fulcro-triple->assertion cljs? triple)))))
 
 ;; Match Guardrails' upstream JVM test invocation.
-(System/setProperty "guardrails.config" "guardrails-test.edn")
-(let [enabled (System/getenv "GUARDRAILS_ENABLED")]
-  (if (or (= "" enabled) (= "false" enabled))
-    (System/clearProperty "guardrails.enabled")
-    (when enabled
-      (System/setProperty "guardrails.enabled" enabled))))
+;; (System/setProperty "guardrails.config" "guardrails-test.edn")
+;; (let [enabled (System/getenv "GUARDRAILS_ENABLED")]
+;;   (if (or (= "" enabled) (= "false" enabled))
+;;     (System/clearProperty "guardrails.enabled")
+;;     (when enabled
+;;       (System/setProperty "guardrails.enabled" enabled))))

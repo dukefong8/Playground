@@ -1,4 +1,4 @@
-(ns jolt.guardrails.fulcro-spec-shim-test
+(ns guardrails.fulcro-spec-shim-test
   (:require [clojure.test :refer [deftest]]
             [fulcro-spec.core :refer [=throws=> assertions]]))
 

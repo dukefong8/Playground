@@ -1,4 +1,4 @@
-(ns jolt.babashka.pod-test
+(ns babashka.pod-test
   (:require [clojure.test :refer [deftest is]]
             [babashka.pods.impl :as pods-impl]
             [cheshire.core :as json]

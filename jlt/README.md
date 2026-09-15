@@ -82,7 +82,7 @@ requires the protocols namespace, as upstream's does — so nothing has to
 remember an ordering. Jolt 0.8.6 and earlier do not have them; this runs against
 a Jolt built from `main` after the core.async work landed.
 
-`test/superv/async_jolt_test.clj` adds 19 more tests and 44 assertions for the
+`test/jolt/superv_async_test.clj` adds 19 more tests and 44 assertions for the
 parts of its public API that suite never reaches — the blocking twins, the
 callback ops, the exception-tracking protocol, the supervisor constructors, and
 the channel plumbing (`tap`, `sub`, `engulf`, `debounce>>`). That file is
@@ -93,7 +93,7 @@ both is an upstream bug. Run it against the oracle with:
 ```sh
 cd ../../superv.async && clojure -Sdeps \
   '{:paths ["src" "/Users/duke/dev/Playground/jlt/test"]}' -M \
-  -e "(require 'superv.async-jolt-test) (clojure.test/run-tests 'superv.async-jolt-test)"
+  -e "(require 'jolt.superv-async-test) (clojure.test/run-tests 'jolt.superv-async-test)"
 ```
 
 Both report `Ran 19 tests containing 44 assertions. 0 failures, 0 errors.`

@@ -1,4 +1,4 @@
-(ns jolt.guardrails.bootstrap-test
+(ns guardrails.bootstrap-test
   (:require [jolt.guardrails.bootstrap]
             [clojure.test :refer [deftest is testing]]
             [com.fulcrologic.guardrails.malli.core :refer [=> >defn]]))

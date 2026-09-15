@@ -1,4 +1,4 @@
-(ns jolt.guardrails.add-deps-test
+(ns jolt.add-deps
   (:require [clojure.test :refer [deftest is testing]]
             [jolt.guardrails.bootstrap]
             [com.fulcrologic.guardrails.core :as guardrails]

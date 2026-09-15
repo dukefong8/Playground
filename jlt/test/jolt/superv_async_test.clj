@@ -1,4 +1,4 @@
-(ns superv.async-jolt-test
+(ns jolt.superv-async-test
   "Contracts from superv.async's public API that its own suite does not reach.
 
   Its suite covers the go/supervision core (<?, <?-, go-try, go-super, the dataflow

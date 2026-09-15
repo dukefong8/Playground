@@ -7,6 +7,10 @@
 
  ;; Guardrails and Truss are declared statically so this project can be run
  ;; directly with Jolt's normal deps.edn resolution.
+ ;; NOTE: guardrails (and fulcro-spec, whose core pulls guardrails back in)
+ ;; are commented out so the --opt build never loads the guardrails jar
+ ;; (its sources break Jolt's DCE reader). The test files stay on disk;
+ ;; re-enable the dep + runner entries below to bring them back.
  :deps {babashka/babashka.pods
         {:mvn/version "0.2.0"
          :exclusions [cheshire/cheshire]}
@@ -28,8 +32,8 @@
         org.clojure/test.check
         {:mvn/version "1.1.3"}
 
-        com.fulcrologic/guardrails
-        {:mvn/version "1.3.3"}
+        ;; com.fulcrologic/guardrails
+        ;; {:mvn/version "1.3.3"}
 
         com.taoensso/truss
         {:mvn/version "2.5.1"}
@@ -45,21 +49,23 @@
          :git/tag "v0.0.9"
          :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}
 
-        ;; Developed alongside this project, so a live :local/root rather than a
-        ;; pinned git dep. Jolt drops the clojure/clojurescript coordinates it
-        ;; declares, leaving core.async to resolve to the one Jolt ships.
         superv.async/superv.async
-        {:local/root "../../superv.async"}}
+        {:local/root "../../superv.async"}
 
- :aliases {;; superv.async's own suite rides along on the test path, so one run
-           ;; covers it.
-           :test {:extra-paths ["test" "../../superv.async/test"]
-                  :extra-deps {fulcrologic/fulcro-spec
-                               {:mvn/version "3.2.9"
-                                ;; fulcro-spec is test-only and otherwise brings
-                                ;; an older Guardrails and Malli copy.
-                                :exclusions [com.fulcrologic/guardrails metosin/malli]}}
-                  :main-opts ["-m" "jolt.test-runner"]}}
+        is.simm/partial-cps
+        {:local/root "../../partial-cps"}}
+
+ :aliases {;; superv.async's and partial-cps's own suites ride along on the test
+           ;; path, so one run covers them.
+           :test {:extra-paths ["test"
+                                "../../superv.async/test"
+                                "../../partial-cps/test"]
+                   ;; fulcrologic/fulcro-spec commented out with guardrails
+                   ;; (its core pulls guardrails back in -- see deps note).
+                   ;; :extra-deps {fulcrologic/fulcro-spec
+                   ;;              {:mvn/version "3.2.9"
+                   ;;               :exclusions [com.fulcrologic/guardrails metosin/malli]}}
+                   :main-opts ["-m" "jolt.test-runner"]}}
 
  ;; Guardrails instrumentation depends on properties at macro-expansion time.
  ;; Cached namespaces can retain checks compiled with a different configuration.
