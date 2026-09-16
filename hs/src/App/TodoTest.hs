@@ -14,7 +14,6 @@ import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
 import Database
-import Hasql.TH
 import Network.HTTP.Types.Header (RequestHeaders)
 import Network.HTTP.Types.Method (StdMethod (..))
 import Network.Wai
@@ -31,6 +30,7 @@ import App (app, appWithTodoGenerator)
 
 import App.Todo
 import Http (checkedInt64)
+import IHP.TypedSql.Hasql (sqlExecTypedSession, typedSql)
 
 tasty :: TestTree -> IO ()
 tasty action =
@@ -43,7 +43,7 @@ tasty action =
       htmlRunner `composeReporters` consoleTestReporter : defaultIngredients
     tests = localOption (Just (HtmlPath "tasty.html")) action
 
---- $> tasty testDB
+-- $> tasty testDB
 testDB :: TestTree
 testDB = withResource acquirePool releasePool $ \getPool ->
   testGroup "Todo persistence behavior"
@@ -70,7 +70,7 @@ testDB = withResource acquirePool releasePool $ \getPool ->
         let todos1' = fromRight [] todos1
         case todos1' of
             (firstTodo:_) -> do
-                _ <- runDb pool (toggleTodoSession firstTodo.id)
+                _ <- runDb pool (toggleTodoSession (TodoId firstTodo.id))
 
                 todos2 <- runDb pool getTodosSession
                 case todos2 of
@@ -382,8 +382,6 @@ todoIdsFromText body =
     todoItemIdPrefix = "id=\"todo-"
 
 truncateTodosSession :: Session ()
-truncateTodosSession =
-  statement ()
-    [resultlessStatement|
-      delete from todos
-    |]
+truncateTodosSession = void $ sqlExecTypedSession [typedSql|
+  delete from todos
+|]

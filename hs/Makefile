@@ -15,7 +15,7 @@ dev:
 		--error-file ghcid.txt \
 		--restart-glob Makefile \
 		--restart-glob .ghc.environment.* \
-		--after-reload-shell 'async: ./pighcid.sh'
+		# --after-reload-shell 'async: ./pighcid.sh'
 
 exe:
 	mkdir -p .build && ln -sf .build .hiefiles && ln -sf .build .hifiles
@@ -27,8 +27,8 @@ env:
 		--package-env . --lib \
 		base relude containers stm-containers text vector template-haskell \
 		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
-		hasql hasql-th hasql-dynamic-statements hasql-pool hasql-postgresql-types pqi-native postgresql-types \
-		http-api-data http-types ihp-hsx ihp-router lucid2 servant servant-server wai wai-extra warp \
+		hasql hasql-dynamic-statements hasql-pool hasql-postgresql-types pqi-native postgresql-types \
+		http-api-data http-types ihp-hsx ihp-router ihp-typed-sql lucid2 servant servant-server wai wai-extra warp \
 		bluefin ki co-log co-log-core fast-logger mtl io-classes io-sim \
 		breakpoint ghc-stack-profiler nothunks rapid grace \
 		tasty tasty-hunit tasty-html tasty-silver tasty-wai

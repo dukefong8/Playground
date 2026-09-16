@@ -9,12 +9,18 @@
 {-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
 module App.Todo
   ( Todo(..)
+  , TodoId(..)
+  , TodoFilter(..)
   , TodosView(..)
   , TodoListView(..)
   , TodoEditView(..)
   , TodoMutationView(..)
+  , parseTodoFilter
+  , toTodoId
+  , toRowId
   , getTodosPage
   , getTodoListPartial
   , addTodo
@@ -39,16 +45,18 @@ module App.Todo
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
-import Data.Vector qualified as V
 import Prelude hiding (id)
 
 import Control.Exception qualified as Exception (SomeException, try)
 import Database
 import Grace.Input qualified (Input (Code))
 import Grace.Interpret qualified as Grace (loadWith, (<~))
-import Hasql.TH
+import Hasql.Decoders qualified as Decoders
 import Htmx
-import Http (RouteHandler, runDbOr500, throwRouteError)
+import Http (RouteHandler, checkedInt64, runDbOr500, throwRouteError)
+import IHP.TypedSql.Hasql (sqlExecTypedSession, sqlQueryTypedSession, typedSql)
+import IHP.TypedSql.Id (Id' (..), PrimaryKey)
+import IHP.TypedSql.Row (TypedSqlRow (..))
 import Logger
 import Network.HTTP.Types (status404)
 import Web.FormUrlEncoded
@@ -56,15 +64,57 @@ import Web.FormUrlEncoded
 data Todo = Todo { id :: Int64, title :: Text, completed :: Bool }
   deriving (Eq, Show)
 
+-- NOTE: positional coupling — decoder order must match the SELECT column
+-- order of every full-table todos query below (id, title, completed).
+-- Reorder columns in either place and this breaks at runtime, not compile time.
+instance TypedSqlRow Todo where
+  typedSqlRowDecoder =
+    Todo
+      <$> Decoders.column (Decoders.nonNullable Decoders.int8)
+      <*> Decoders.column (Decoders.nonNullable Decoders.text)
+      <*> Decoders.column (Decoders.nonNullable Decoders.bool)
+
+type instance PrimaryKey "todos" = Int64
+
+-- | Todo identity parsed once at the HTTP boundary. Handlers and sessions
+-- take TodoId; conversion to the row-level Id' happens only at SQL sites
+-- via toRowId, and unwrapping to Int64 only where views/tests need raw ids.
+newtype TodoId = TodoId Int64
+  deriving (Eq, Show)
+
+unTodoId :: TodoId -> Int64
+unTodoId (TodoId intId) = intId
+
+toTodoId :: Integer -> Maybe TodoId
+toTodoId = fmap TodoId . checkedInt64
+
+toRowId :: TodoId -> Id' "todos"
+toRowId (TodoId intId) = Id intId
+
 data TodoListState = TodoListState
-  { stateFilter :: Maybe Text
+  { stateFilter :: TodoFilter
   , stateTitle  :: Maybe Text
   } deriving (Eq, Show)
 
+-- | List filter parsed once at the HTTP boundary. Unknown or missing values
+-- fall back to ShowAll in this one place instead of at every use site.
+data TodoFilter = ShowAll | ShowActive | ShowCompleted
+  deriving (Eq, Show)
+
+parseTodoFilter :: Maybe Text -> TodoFilter
+parseTodoFilter filter_ = case filter_ of
+  Just "active"    -> ShowActive
+  Just "completed" -> ShowCompleted
+  _                -> ShowAll
+
+todoFilterName :: TodoFilter -> Text
+todoFilterName ShowAll       = "all"
+todoFilterName ShowActive    = "active"
+todoFilterName ShowCompleted = "completed"
+
 instance FromForm TodoListState where
   fromForm form =
-    TodoListState
-      <$> parseMaybe "filter" form
+    (TodoListState . parseTodoFilter <$> parseMaybe "filter" form)
       <*> parseMaybe "title" form
 
 data AddTodoRequest = AddTodoRequest
@@ -74,8 +124,7 @@ data AddTodoRequest = AddTodoRequest
 
 instance FromForm AddTodoRequest where
   fromForm form =
-    AddTodoRequest
-      <$> parseUnique "title" form
+    (AddTodoRequest . normalizeTitle <$> parseUnique "title" form)
       <*> fromForm form
 
 data GenerateTodosRequest = GenerateTodosRequest
@@ -86,7 +135,7 @@ data GenerateTodosRequest = GenerateTodosRequest
 instance FromForm GenerateTodosRequest where
   fromForm form =
     GenerateTodosRequest
-      <$> parseUnique "title" form
+      <$> (normalizeTitle <$> parseUnique "title" form)
       <*> fromForm form
 
 data UpdateTodoRequest = UpdateTodoRequest
@@ -99,7 +148,7 @@ instance FromForm UpdateTodoRequest where
     editTitle <- parseMaybe "edit-title" form
     title <- parseMaybe "title" form
     UpdateTodoRequest
-      (fromMaybe "" (editTitle <|> title))
+      (normalizeTitle (fromMaybe "" (editTitle <|> title)))
       <$> fromForm form
 
 data TodoMutationStatus
@@ -119,7 +168,7 @@ data TodoMutationStatus
 
 data TodosView = TodosView
   { todos       :: [Todo]
-  , filterBy    :: Text
+  , filterBy    :: TodoFilter
   , searchTitle :: Text
   } deriving (Eq, Show)
 
@@ -128,7 +177,7 @@ renderTodosViewHtml todosView = renderBS $ todoPage todosView.todos todosView.fi
 
 data TodoListView = TodoListView
   { todos             :: [Todo]
-  , filterBy          :: Text
+  , filterBy          :: TodoFilter
   , searchTitle       :: Text
   , highlightedTodoId :: Maybe Int64
   , outOfBand         :: Bool
@@ -152,7 +201,7 @@ renderTodoEditViewHtml (TodoEditView todo) = renderBS $ todoEditForm todo
 
 data TodoMutationView = TodoMutationView
   { todos             :: [Todo]
-  , filterBy          :: Text
+  , filterBy          :: TodoFilter
   , searchTitle       :: Text
   , mutation          :: TodoMutationStatus
   , highlightedTodoId :: Maybe Int64
@@ -209,45 +258,39 @@ addFormFilterInclude :: Text
 addFormFilterInclude = "#todo-list-form input[name='filter']"
 
 getTodosSession :: Session [Todo]
-getTodosSession = do
-  V.toList . V.map (\(id', title', completed') -> Todo id' title' completed') <$> statement ()
-    [vectorStatement|
-      select id :: int8, title :: text, completed :: bool from todos order by id
-    |]
+getTodosSession = sqlQueryTypedSession [typedSql|
+  select id, title, completed from todos order by id
+|]
 
-getTodosPage :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> RouteHandler TodosView
+getTodosPage :: HasCallStack => Pool -> TodoFilter -> Maybe Text -> RouteHandler TodosView
 getTodosPage pool filter_ search_ = do
-  logInfo $ "GET /todos page filter=" <> filterText filter_ <> " search=" <> searchText search_
+  logInfo $ "GET /todos page filter=" <> todoFilterName filter_ <> " search=" <> searchText search_
   items <- runDbOr500 pool getTodosSession
   logInfo $ "DB todos page todos=" <> T.show items
-  pure $ TodosView items (filterText filter_) (searchText search_)
+  pure $ TodosView items filter_ (searchText search_)
 
-getTodoListPartial :: HasCallStack => Pool -> Maybe Text -> Maybe Text -> RouteHandler TodoListView
+getTodoListPartial :: HasCallStack => Pool -> TodoFilter -> Maybe Text -> RouteHandler TodoListView
 getTodoListPartial pool filter_ search_ = do
-  logInfo $ "GET /todos/list filter=" <> filterText filter_ <> " search=" <> searchText search_
+  logInfo $ "GET /todos/list filter=" <> todoFilterName filter_ <> " search=" <> searchText search_
   items   <- runDbOr500 pool getTodosSession
   logInfo $ "DB todos list todos=" <> T.show items
-  pure $ TodoListView items (filterText filter_) (searchText search_) Nothing False
+  pure $ TodoListView items filter_ (searchText search_) Nothing False
 
 addTodo :: HasCallStack => Pool -> AddTodoRequest -> RouteHandler TodoMutationView
 addTodo pool request = do
-  let normalizedTitle = normalizeTitle request.addTitle
-  logInfo $ "POST /todos add title=" <> normalizedTitle
-  isDuplicate <- runDbOr500 pool (todoTitleExistsSession normalizedTitle)
-  duplicateTodo <-
-    if isDuplicate
-      then runDbOr500 pool (getTodoByTitleSession normalizedTitle)
-      else pure Nothing
-  let addedAny = not (T.null normalizedTitle) && not isDuplicate
-  unless (T.null normalizedTitle || isDuplicate) $
-    runDbOr500 pool (addTodoSession normalizedTitle)
+  logInfo $ "POST /todos add title=" <> request.addTitle
+  duplicateTodo <- runDbOr500 pool (getTodoByTitleSession request.addTitle)
+  let isDuplicate = isJust duplicateTodo
+  let addedAny = not (T.null request.addTitle) && not isDuplicate
+  unless (T.null request.addTitle || isDuplicate) $
+    runDbOr500 pool (addTodoSession request.addTitle)
   items <- runDbOr500 pool getTodosSession
   logInfo $ "DB add added=" <> T.show addedAny <> " duplicateTodo=" <> T.show duplicateTodo <> " todos=" <> T.show items
   pure TodoMutationView
     { todos = items
-    , filterBy = stateFilterText request.addState
+    , filterBy = request.addState.stateFilter
     , searchTitle = ""
-    , mutation = addMutationStatus normalizedTitle isDuplicate
+    , mutation = addMutationStatus request.addTitle isDuplicate
     , highlightedTodoId = fmap (.id) duplicateTodo
     , editingTodoId = Nothing
     , editingTitle = Nothing
@@ -257,10 +300,9 @@ type GenerateTodoTitles = Text -> RouteHandler (Either Text [Text])
 
 generateTodos :: HasCallStack => Pool -> GenerateTodoTitles -> GenerateTodosRequest -> RouteHandler TodoMutationView
 generateTodos pool generate request = do
-  let normalizedPrompt = normalizeTitle request.generatePrompt
-      mkView todos mutation = TodoMutationView
+  let mkView todos mutation = TodoMutationView
         { todos
-        , filterBy = stateFilterText request.generateState
+        , filterBy = request.generateState.stateFilter
         , searchTitle = ""
         , mutation
         , highlightedTodoId = Nothing
@@ -268,10 +310,10 @@ generateTodos pool generate request = do
         , editingTitle = Nothing
         }
   existingItems <- runDbOr500 pool getTodosSession
-  if T.null normalizedPrompt
+  if T.null request.generatePrompt
     then pure $ mkView existingItems TodoGenerationEmptyPrompt
     else do
-      result <- generate normalizedPrompt
+      result <- generate request.generatePrompt
       case result of
         Left _ -> do
           logInfo "Grace todo generation failed"
@@ -333,21 +375,21 @@ graceGenerateTodoTitles promptText = do
       pure $ Left "grace generation failed"
     Right titles -> pure $ Right titles
 
-toggleTodo :: HasCallStack => Pool -> Int64 -> TodoListState -> RouteHandler TodoMutationView
+toggleTodo :: HasCallStack => Pool -> TodoId -> TodoListState -> RouteHandler TodoMutationView
 toggleTodo pool todoId listState = do
-  logInfo $ "PATCH /todos/" <> show todoId <> " toggle"
+  logInfo $ "PATCH /todos/" <> show (unTodoId todoId) <> " toggle"
   runDbOr500 pool (toggleTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
   logInfo $ "DB toggle todos=" <> T.show items
   pure $ mutationView TodoToggled listState items Nothing
 
-deleteTodo :: HasCallStack => Pool -> Int64 -> Maybe Text -> RouteHandler TodoMutationView
-deleteTodo pool todoId mFilter = do
-  logInfo $ "DELETE /todos/" <> show todoId
+deleteTodo :: HasCallStack => Pool -> TodoId -> TodoFilter -> RouteHandler TodoMutationView
+deleteTodo pool todoId filter_ = do
+  logInfo $ "DELETE /todos/" <> show (unTodoId todoId)
   runDbOr500 pool (deleteTodoSession todoId)
   items <- runDbOr500 pool getTodosSession
   logInfo $ "DB delete todos=" <> T.show items
-  pure $ mutationView TodoDeleted (TodoListState mFilter Nothing) items Nothing
+  pure $ mutationView TodoDeleted (TodoListState filter_ Nothing) items Nothing
 
 clearCompleted :: HasCallStack => Pool -> TodoListState -> RouteHandler TodoMutationView
 clearCompleted pool listState = do
@@ -357,45 +399,35 @@ clearCompleted pool listState = do
   logInfo $ "DB clear todos=" <> T.show items
   pure $ mutationView TodoCleared listState items Nothing
 
-editTodoForm :: HasCallStack => Pool -> Int64 -> RouteHandler TodoEditView
+editTodoForm :: HasCallStack => Pool -> TodoId -> RouteHandler TodoEditView
 editTodoForm pool todoId = do
-  logInfo $ "GET /todos/" <> show todoId <> "/edit"
+  logInfo $ "GET /todos/" <> show (unTodoId todoId) <> "/edit"
   mTodo <- runDbOr500 pool (getTodoSession todoId)
   logInfo $ "DB edit todo=" <> T.show mTodo
   case mTodo of
     Just todo -> pure $ TodoEditView todo
     Nothing   -> throwRouteError status404 "Todo not found"
 
-updateTodo :: HasCallStack => Pool -> Int64 -> UpdateTodoRequest -> RouteHandler TodoMutationView
+updateTodo :: HasCallStack => Pool -> TodoId -> UpdateTodoRequest -> RouteHandler TodoMutationView
 updateTodo pool todoId request = do
   let title' = request.updateTitle
-  let normalizedTitle = normalizeTitle title'
-  logInfo $ "PUT /todos/" <> show todoId <> " title=" <> normalizedTitle
-  isDuplicate <- runDbOr500 pool (todoTitleExistsExceptSession todoId normalizedTitle)
-  duplicateTodo <-
-    if isDuplicate
-      then runDbOr500 pool (getTodoByTitleExceptSession todoId normalizedTitle)
-      else pure Nothing
-  let updated = not (T.null normalizedTitle) && not isDuplicate
-  unless (T.null normalizedTitle || isDuplicate) $
-    runDbOr500 pool (updateTodoTitleSession todoId normalizedTitle)
+  logInfo $ "PUT /todos/" <> show (unTodoId todoId) <> " title=" <> title'
+  duplicateTodo <- runDbOr500 pool (getTodoByTitleExceptSession todoId title')
+  let isDuplicate = isJust duplicateTodo
+  let updated = not (T.null title') && not isDuplicate
+  unless (T.null title' || isDuplicate) $
+    runDbOr500 pool (updateTodoTitleSession todoId title')
   items <- runDbOr500 pool getTodosSession
   logInfo $ "DB update updated=" <> T.show updated <> " todos=" <> T.show items
   if updated
     then pure $ mutationView TodoUpdated request.updateState items Nothing
     else pure (mutationView TodoUpdateDuplicate request.updateState items (fmap (.id) duplicateTodo))
-      { editingTodoId = Just todoId
+      { editingTodoId = Just (unTodoId todoId)
       , editingTitle = Just title'
       }
 
-filterText :: Maybe Text -> Text
-filterText = fromMaybe "all"
-
 searchText :: Maybe Text -> Text
 searchText = fromMaybe ""
-
-stateFilterText :: TodoListState -> Text
-stateFilterText = filterText . (.stateFilter)
 
 stateSearchText :: TodoListState -> Text
 stateSearchText = searchText . (.stateTitle)
@@ -410,7 +442,7 @@ mutationView :: TodoMutationStatus -> TodoListState -> [Todo] -> Maybe Int64 -> 
 mutationView status listState items highlightedTodoId' =
   TodoMutationView
     { todos = items
-    , filterBy = stateFilterText listState
+    , filterBy = listState.stateFilter
     , searchTitle = stateSearchText listState
     , mutation = status
     , highlightedTodoId = highlightedTodoId'
@@ -420,79 +452,55 @@ mutationView status listState items highlightedTodoId' =
 
 
 addTodoSession :: Text -> Session ()
-addTodoSession title' = statement title'
-  [resultlessStatement| insert into todos (title) values ($1 :: text) |]
-
-todoTitleExistsSession :: Text -> Session Bool
-todoTitleExistsSession title' = do
-  res <- statement title'
-    [maybeStatement|
-      select 1 :: int4
-      from todos
-      where lower(btrim(title)) = lower(btrim($1 :: text))
-      limit 1
-    |]
-  pure $ isJust res
+addTodoSession title' = void $ sqlExecTypedSession [typedSql|
+  insert into todos (title) values (${title'})
+|]
 
 getTodoByTitleSession :: Text -> Session (Maybe Todo)
-getTodoByTitleSession title' = do
-  fmap (\(id', title'', completed') -> Todo id' title'' completed') <$> statement title'
-    [maybeStatement|
-      select id :: int8, title :: text, completed :: bool
-      from todos
-      where lower(btrim(title)) = lower(btrim($1 :: text))
-      order by id
-      limit 1
-    |]
+getTodoByTitleSession title' = sqlQueryTypedSession [typedSql|
+  select id, title, completed
+  from todos
+  where lower(btrim(title)) = lower(btrim(${title'}))
+  order by id
+  limit 1
+|]
 
-getTodoByTitleExceptSession :: Int64 -> Text -> Session (Maybe Todo)
-getTodoByTitleExceptSession id' title' = do
-  fmap (\(id'', title'', completed') -> Todo id'' title'' completed') <$> statement (id', title')
-    [maybeStatement|
-      select id :: int8, title :: text, completed :: bool
-      from todos
-      where id <> $1 :: int8
-        and lower(btrim(title)) = lower(btrim($2 :: text))
-      order by id
-      limit 1
-    |]
+getTodoByTitleExceptSession :: TodoId -> Text -> Session (Maybe Todo)
+getTodoByTitleExceptSession todoId title' = sqlQueryTypedSession [typedSql|
+  select id, title, completed
+  from todos
+  where id <> ${unTodoId todoId}
+    and lower(btrim(title)) = lower(btrim(${title'}))
+  order by id
+  limit 1
+|]
 
-todoTitleExistsExceptSession :: Int64 -> Text -> Session Bool
-todoTitleExistsExceptSession id' title' = do
-  res <- statement (id', title')
-    [maybeStatement|
-      select 1 :: int4
-      from todos
-      where id <> $1 :: int8
-        and lower(btrim(title)) = lower(btrim($2 :: text))
-      limit 1
-    |]
-  pure $ isJust res
+toggleTodoSession :: TodoId -> Session ()
+toggleTodoSession todoId = void $ sqlExecTypedSession [typedSql|
+  update todos set completed = not completed where id = ${toRowId todoId}
+|]
 
-toggleTodoSession :: Int64 -> Session ()
-toggleTodoSession id' = statement id'
-  [resultlessStatement| update todos set completed = not completed where id = $1 :: int8 |]
-
-deleteTodoSession :: Int64 -> Session ()
-deleteTodoSession id' = statement id'
-  [resultlessStatement| delete from todos where id = $1 :: int8 |]
+deleteTodoSession :: TodoId -> Session ()
+deleteTodoSession todoId = void $ sqlExecTypedSession [typedSql|
+  delete from todos where id = ${toRowId todoId}
+|]
 
 clearCompletedSession :: Session ()
-clearCompletedSession = statement ()
-  [resultlessStatement| delete from todos where completed = true |]
+clearCompletedSession = void $ sqlExecTypedSession [typedSql|
+  delete from todos where completed = true
+|]
 
-getTodoSession :: Int64 -> Session (Maybe Todo)
-getTodoSession id' = do
-  fmap (\(id'', title', completed') -> Todo id'' title' completed') <$> statement id'
-    [maybeStatement|
-      select id :: int8, title :: text, completed :: bool from todos where id = $1 :: int8
-    |]
+getTodoSession :: TodoId -> Session (Maybe Todo)
+getTodoSession todoId = sqlQueryTypedSession [typedSql|
+  select id, title, completed from todos where id = ${toRowId todoId}
+|]
 
-updateTodoTitleSession :: Int64 -> Text -> Session ()
-updateTodoTitleSession id' title' = statement (title', id')
-  [resultlessStatement| update todos set title = $1 :: text where id = $2 :: int8 |]
+updateTodoTitleSession :: TodoId -> Text -> Session ()
+updateTodoTitleSession todoId title' = void $ sqlExecTypedSession [typedSql|
+  update todos set title = ${title'} where id = ${toRowId todoId}
+|]
 
-todoPage :: [Todo] -> Text -> Html ()
+todoPage :: [Todo] -> TodoFilter -> Html ()
 todoPage items filterBy =
   pageShell todoHead [hsx|
     <section class="todoapp">
@@ -635,13 +643,13 @@ todoEditFormWithTitle todo title' = [hsx|
   </li>
 |]
 
-filterLink :: Text -> Text -> Text -> Html ()
+filterLink :: TodoFilter -> Text -> TodoFilter -> Html ()
 filterLink filterName label currentFilter = [hsx|
   <li>{anchor}</li>
 |]
   where
     href :: Text
-    href = "/todos/list?filter=" <> filterName
+    href = "/todos/list?filter=" <> todoFilterName filterName
     anchor :: Html ()
     anchor =
       [hsx|
@@ -662,19 +670,19 @@ filterLink filterName label currentFilter = [hsx|
           | filterName == currentFilter = "selected"
           | otherwise                   = ""
 
-todoListSection :: [Todo] -> Text -> Text -> Html ()
+todoListSection :: [Todo] -> Text -> TodoFilter -> Html ()
 todoListSection items searchQ filterBy =
   todoListSectionWithOptions items searchQ filterBy Nothing False Nothing Nothing
 
-todoListSectionHighlighted :: [Todo] -> Text -> Text -> Maybe Int64 -> Html ()
+todoListSectionHighlighted :: [Todo] -> Text -> TodoFilter -> Maybe Int64 -> Html ()
 todoListSectionHighlighted items searchQ filterBy highlightedTodoId =
   todoListSectionWithOptions items searchQ filterBy highlightedTodoId False Nothing Nothing
 
-todoListSectionHighlightedOob :: [Todo] -> Text -> Text -> Maybe Int64 -> Bool -> Html ()
+todoListSectionHighlightedOob :: [Todo] -> Text -> TodoFilter -> Maybe Int64 -> Bool -> Html ()
 todoListSectionHighlightedOob items searchQ filterBy highlightedTodoId oob =
   todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob Nothing Nothing
 
-todoListSectionWithOptions :: [Todo] -> Text -> Text -> Maybe Int64 -> Bool -> Maybe Int64 -> Maybe Text -> Html ()
+todoListSectionWithOptions :: [Todo] -> Text -> TodoFilter -> Maybe Int64 -> Bool -> Maybe Int64 -> Maybe Text -> Html ()
 todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob editingTodoId editingTitle =
   if oob
     then [hsx|
@@ -690,7 +698,7 @@ todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob editingT
   where
     todoListForm = [hsx|
       <div id="todo-list-form">
-        <input type="hidden" name="filter" value={filterBy}>
+        <input type="hidden" name="filter" value={todoFilterName filterBy}>
         <section class="main">
           {toggleAll}
           <label for="toggle-all">Mark all as complete</label>
@@ -701,23 +709,31 @@ todoListSectionWithOptions items searchQ filterBy highlightedTodoId oob editingT
         <footer class="footer">
           <span class="todo-count"><strong>{activeCountText}</strong> {todoCountLabel activeCount}</span>
           <ul class="filters">
-            {filterLink "all" "All" filterBy}
-            {filterLink "active" "Active" filterBy}
-            {filterLink "completed" "Completed" filterBy}
+            {filterLink ShowAll "All" filterBy}
+            {filterLink ShowActive "Active" filterBy}
+            {filterLink ShowCompleted "Completed" filterBy}
           </ul>
           {clearButton}
         </footer>
       </div>
     |]
-    searched = filter (todoMatchesSearch searchQ) items
-    matched = case filterBy of
-      "active"    -> filter (not . (.completed)) searched
-      "completed" -> filter (.completed) searched
-      _           -> searched
-    activeCount = length $ filter (not . (.completed)) items
+    -- Single pass: counts cover all items (search-independent), matched is
+    -- the search- and filter-narrowed subset in original order.
+    (activeCount, completedCount, matchedRev) =
+      foldl'
+        ( \(active, completed, acc) todo ->
+            ( if todo.completed then active else active + 1
+            , if todo.completed then completed + 1 else completed
+            , if todoMatchesSearch searchQ todo && todoMatchesFilter filterBy todo
+                then todo : acc
+                else acc
+            )
+        )
+        (0, 0, [])
+        items
+    matched = reverse matchedRev
     activeCountText :: Text
     activeCountText = show activeCount
-    completedCount = length $ filter (.completed) items
     allMatchedCompleted = not (null matched) && all (.completed) matched
     toggleAll :: Html ()
     toggleAll
@@ -761,6 +777,11 @@ todoCountLabel n = (if n == 1 then "item" else "items") <> " left"
 todoMatchesSearch :: Text -> Todo -> Bool
 todoMatchesSearch searchQ todo =
   maybe True (`T.isInfixOf` normalizeTitleKey todo.title) (normalizeSearch searchQ)
+
+todoMatchesFilter :: TodoFilter -> Todo -> Bool
+todoMatchesFilter ShowActive    = not . (.completed)
+todoMatchesFilter ShowCompleted = (.completed)
+todoMatchesFilter ShowAll       = const True
 
 normalizeSearch :: Text -> Maybe Text
 normalizeSearch = nonEmptyText . normalizeTitleKey . T.replace "+" " "
