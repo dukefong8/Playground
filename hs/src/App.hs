@@ -58,9 +58,9 @@ dispatch :: GenerateTodoTitles -> Pool -> AppRoute -> Application
 dispatch _generate _pool HomeAction _req respond =
   respond $ htmlResponse status200 $ renderBS index
 dispatch _generate pool (TodosPageAction f t) req respond =
-  runView renderTodosViewHtml (getTodosPage pool f t) req respond
+  runView renderTodosViewHtml (getTodosPage pool (parseTodoFilter f) t) req respond
 dispatch _generate pool (TodoListAction f t) req respond =
-  runView renderTodoListViewHtml (getTodoListPartial pool f t) req respond
+  runView renderTodoListViewHtml (getTodoListPartial pool (parseTodoFilter f) t) req respond
 dispatch _generate pool AddTodoAction req respond =
   withParsedBody req (addTodo pool) renderTodoMutationViewHtml respond
 dispatch _generate pool ClearTodosAction req respond =
@@ -72,7 +72,7 @@ dispatch _generate pool (ToggleTodoAction rawId) req respond =
 dispatch _generate pool (DeleteTodoAction rawId f) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
-    Right todoId  -> runView renderTodoMutationViewHtml (deleteTodo pool todoId f) _req respond
+    Right todoId  -> runView renderTodoMutationViewHtml (deleteTodo pool todoId (parseTodoFilter f)) _req respond
 dispatch _generate pool (EditTodoAction rawId) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
@@ -84,9 +84,9 @@ dispatch _generate pool (UpdateTodoAction rawId) req respond =
 dispatch generate pool GenerateTodosAction req respond =
   withParsedBody req (generateTodos pool generate) renderTodoMutationViewHtml respond
 
-routeTodoIdOr404 :: Integer -> Either Response Int64
+routeTodoIdOr404 :: Integer -> Either Response TodoId
 routeTodoIdOr404 rawId =
-  case checkedInt64 rawId of
+  case toTodoId rawId of
     Nothing     -> Left $ htmlResponse status404 $ renderBS page404
     Just todoId -> Right todoId
 
