@@ -134,8 +134,7 @@ data GenerateTodosRequest = GenerateTodosRequest
 
 instance FromForm GenerateTodosRequest where
   fromForm form =
-    GenerateTodosRequest
-      <$> (normalizeTitle <$> parseUnique "title" form)
+    (GenerateTodosRequest . normalizeTitle <$> parseUnique "title" form)
       <*> fromForm form
 
 data UpdateTodoRequest = UpdateTodoRequest
@@ -352,7 +351,7 @@ insertableGeneratedTitles existingItems =
 
 graceGenerateTodoTitles :: HasCallStack => GenerateTodoTitles
 graceGenerateTodoTitles promptText = do
-  let graceSource = T.unlines
+  let graceSource = unlines
         [ "let key = env:DEEPSEEK_API_KEY : Key"
         , "let model = \"deepseek-v4-flash\""
         , "in  prompt"
