@@ -15,6 +15,7 @@ dev:
 		--error-file ghcid.txt \
 		--restart-glob Makefile \
 		--restart-glob .ghc.environment.* \
+		--restart-glob pighcid.sh \
 		--after-reload-shell 'async: ./pighcid.sh'
 
 exe:
