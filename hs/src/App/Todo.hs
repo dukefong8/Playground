@@ -18,6 +18,7 @@ module App.Todo
   , TodoListView(..)
   , TodoEditView(..)
   , TodoMutationView(..)
+  , TodoRoute(..)
   , parseTodoFilter
   , toTodoId
   , toRowId
@@ -60,6 +61,18 @@ import IHP.TypedSql.Row (TypedSqlRow (..))
 import Logger
 import Network.HTTP.Types (status404)
 import Web.FormUrlEncoded
+
+data TodoRoute
+  = TodosPageAction { todoFilter :: Maybe Text, title :: Maybe Text }
+  | TodoListAction { todoFilter :: Maybe Text, title :: Maybe Text }
+  | AddTodoAction
+  | ClearTodosAction
+  | ToggleTodoAction { todoId :: Integer }
+  | DeleteTodoAction { todoId :: Integer, todoFilter :: Maybe Text }
+  | EditTodoAction { todoId :: Integer }
+  | UpdateTodoAction { todoId :: Integer }
+  | GenerateTodosAction
+  deriving (Eq, Show)
 
 data Todo = Todo { id :: Int64, title :: Text, completed :: Bool }
   deriving (Eq, Show)
