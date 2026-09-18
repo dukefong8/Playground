@@ -33,12 +33,19 @@ if ! mkdir "$WORK" 2>/dev/null; then
     echo "pighcid: pi already running (pid $owner), skipping" >&2
     exit 0
   fi
-  # Stale lock from a killed run: claim it in place.
+  # Stale lock from a killed run. Steal it with `mv`, which only one process can win —
+  # claiming it in place would let two hooks that both read the same dead pid fall through
+  # together and start two pis, and the loser's exit trap would then delete the winner's
+  # lock, admitting a third. `async:` hooks are never serialised by ghciwatch, so the
+  # overlap this guards against is real.
+  mv -- "$WORK" "$WORK.stale.$$" 2>/dev/null || exit 0
+  rm -rf -- "$WORK.stale.$$"
+  mkdir "$WORK" 2>/dev/null || exit 0
 fi
 trap 'rm -rf -- "${WORK:?}"' EXIT
 echo $$ >"$WORK/pid"
 
-PROMPT="Fix GHC errors with the smallest correct edit; read ghcid.txt until All good. If two consecutive edits leave an error around the same line, STOP. Never add pragmas or diagnostic splices. Try hole _ where a type is unknown and let the reload report what GHC expects. End with exactly one line: 'FIXED: <fix>' or 'STOPPED: <why>'."
+PROMPT="Fix GHC errors with minimal correct edits; read ghcid.txt until it outputs 'All good'. Check GHC's 'Valid hole fits' first, and if necessary, use 'Valid refinement hole fits' (use type holes (_) where wrapper expressions containing nested holes) in ghcid.txt to select and apply the appropriate match. Fill a hole from those fits where you can; try restoring the value the previous commit had only as a last resort, since the working tree is deliberately ahead of the last commit. If two consecutive edits result in errors on the exact same line number, ABORT immediately. Never add pragmas or diagnostic splices. Your final response must contain only one line: either 'FIXED: ' or 'STOPPED: '."
 
 # Status goes on the status line, and nothing is typed into any pane: the
 # ghciwatch pane is a TUI, so text arriving there is read as keystrokes and could
@@ -58,17 +65,14 @@ report() {
 # delay is finite so a run that dies without reporting doesn't leave it up.
 report 300000 'pighcid: fixing the build error...'
 
-# --tools read,edit is the whole toolset: pi reads the error and the code, edits, and
-# reads again to confirm — with no shell to block in. --no-extensions drops the
-# web-access tools it never calls. The errors and the prompt ride in together on
-# stdin, errors first.
+# The errors and the prompt ride in together on stdin, errors first.
 #
 # Capture pi's reply: it prints only its final message, so this stays small. `|&
 # tee` merges stderr (where pi puts warnings and hard failures) into stdout and
 # logs the whole stream to .pighcid.log.
 rc=0
-out=$(printf '%s\n\n%s\n' "$(<ghcid.txt)" "$PROMPT" |
-  pi -p --no-extensions --tools read,edit,find,grep \
+out=$(printf '%s\n\n%s\n' "$(<"$GHCID")" "$PROMPT" |
+  pi -p --tools read,edit,find,git \
     --provider deepseek --model deepseek-flash --thinking low |&
   tee "$LOG") || rc=$?
 

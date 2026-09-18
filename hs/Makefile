@@ -11,8 +11,10 @@ EXE  := $(shell basename $(MAIN) .Main)
 dev:
 	ghciwatch --clear --no-interrupt-reloads \
 		--command ghci-$(GHC) \
-		--enable-eval --watch . \
 		--error-file ghcid.txt \
+		--enable-eval --watch . \
+		--reload-glob '!dist-newstyle/**' \
+		--restart-glob '!dist-newstyle/**' \
 		--restart-glob Makefile \
 		--restart-glob .ghc.environment.* \
 		--restart-glob pighcid.sh \
