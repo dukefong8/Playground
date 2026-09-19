@@ -60,6 +60,27 @@ mcp__chrome_devtools_navigate_page url: "http://localhost:8000/todos"
 mcp__chrome_devtools_evaluate_script function: "async () => { ... }"
 ```
 
+## ihp-typed-sql tests (cabal exception)
+
+The `DO NOT run cabal` rule above does NOT apply here. Run from this dir (`hs/`, whose `cabal.project` includes `ihp-typed-sql`):
+
+```bash
+cabal test ihp-typed-sql:spec --test-show-details=direct   # suite is named `spec`, not `tests`
+```
+
+- Requires `PGHOST`/`DATABASE_URL` in env (already set in this shell).
+- Never run two suites concurrently against the same DB: `setupSchema` DDL on shared `typed_sql_test_*` tables races (dropped-table / dropped-type / FK errors). Serial runs are reproducible.
+- Slow: ~119 examples, each ghci case takes ~10s (10+ min total). Run in background and poll:
+```bash
+rm -f /tmp/ihp-test.log /tmp/ihp-test.done
+nohup bash -c 'cabal test ihp-typed-sql:spec --test-show-details=direct > /tmp/ihp-test.log 2>&1; echo $? > /tmp/ihp-test.done' >/dev/null 2>&1 &
+tail -n 30 /tmp/ihp-test.log   # poll; done when /tmp/ihp-test.done exists
+```
+- Fast single-test path (hspec match, ~15s):
+```bash
+cabal test ihp-typed-sql:spec --test-show-details=direct --test-options='--match "/<test name substring>/"'
+```
+
 ## Hole-Driven Development
 
 Write type signatures first; use `_` for unknowns. Check typed-hole suggestions in `ghcid.txt` immediately on save. Fill holes incrementally.

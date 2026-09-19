@@ -1,6 +1,6 @@
 ---
 name: babashka
-description: "Write idiomatic Babashka (bb) scripts and modules. Covers babashka.fs, babashka.process, babashka.cli, babashka.http-client, and built-in namespaces. Use when: writing bb scripts, creating or modifying a task, REPL-driven Babashka development, editing .clj files in directories with bb.edn or scripts/ folders, using Backseat Driver tools with Babashka."
+description: "Write idiomatic Babashka (bb) scripts and modules. Covers babashka.fs, babashka.process, babashka.cli, babashka.http-client, and built-in namespaces. Use when: writing bb scripts, creating or modifying a task, REPL-driven Babashka development, hosting a browser scittle/ClojureScript REPL over sci.nrepl (nREPL + websocket, evaluating against a live page), editing .clj files in directories with bb.edn or scripts/ folders, using Backseat Driver tools with Babashka."
 ---
 
 # Babashka
@@ -108,6 +108,35 @@ Babashka scripts often touch the file system, spawn processes, and hit the netwo
     (execute! plan)
     (println "Files remaining:" (count (fs/glob tmp "**/*")))))
 ```
+
+## Browser scittle REPL (sci.nrepl)
+
+Babashka can host a REPL for ClojureScript running *in a browser page* — the
+right tool when the code you're working on **is** the page (its DOM, its state,
+the functions it has loaded):
+
+```bash
+bb -Sdeps '{:deps {io.github.babashka/sci.nrepl {:mvn/version "0.0.2"}}}' \
+   -e "(require '[sci.nrepl.browser-server :as b]) (b/start! {:nrepl-port 3339 :websocket-port 3340}) @(promise)"
+```
+
+Then `bb repl --connect 3339` puts you in the page's SCI env, and the page just
+needs a port var plus `scittle.nrepl.js` loaded after scittle.js.
+Driving it with `bb repl --connect <port>` — dos and don'ts:
+
+**Do** pass the port alone (`3339` resolves to `127.0.0.1:3339`), and send code on
+**stdin**: `bb repl --connect 3339 < client.cljs`, or a heredoc (`<<'EOF' … EOF`).
+That's how a whole file reaches the page. Pass the port explicitly, too — the
+`.nrepl-port` fallback lands on the project's own nREPL, where `js/…` fails.
+
+**Don't** rely on a file argument or `-e`: `bb repl --connect 3339 client.cljs` is
+ignored (it connects, prompts, evaluates nothing), `-f client.cljs` is read as a
+filename (`File does not exist: -f`), `-e '(…)'` never evaluates, and any
+`-f client.cljs` sends `load-file`, which browser SCI can't resolve.
+
+See [references/scittle-nrepl.md](references/scittle-nrepl.md) for the page
+snippet, the file-serving pattern that lets an editor buffer and the page share
+one source, and the SCI interop gotchas.
 
 ## Script Dependencies
 

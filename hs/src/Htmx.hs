@@ -16,8 +16,9 @@ pageShell customHead body = [hsx|
     <head>
       <meta charset="UTF-8">
       <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@next/dist/htmax.min.js"></script>
-      <script src="https://cdn.jsdelivr.net/npm/scittle@0.8.32/dist/scittle.js" type="application/javascript"></script>
-      <script src="https://raw.githubusercontent.com/borkdude/reagami/refs/heads/main/src/reagami/core.cljc" type="application/x-scittle"></script>
+      <script src="https://cdn.jsdelivr.net/npm/scittle@0.8.33/dist/scittle.js" type="application/javascript"></script>
+      <script>var SCITTLE_NREPL_WEBSOCKET_PORT = 3340;</script>
+      <script src="https://cdn.jsdelivr.net/npm/scittle@0.8.33/dist/scittle.nrepl.js" type="application/javascript"></script>
       {customHead}
     </head>
     <body>

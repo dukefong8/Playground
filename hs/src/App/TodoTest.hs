@@ -14,7 +14,7 @@ import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
 import Database
-import Network.HTTP.Types.Header (RequestHeaders)
+import Network.HTTP.Types.Header (HeaderName, RequestHeaders)
 import Network.HTTP.Types.Method (StdMethod (..))
 import Network.Wai
 import Network.Wai.Test qualified as WaiTest
@@ -137,15 +137,35 @@ testRoute = withResource acquirePool releasePool \getPool ->
   , testWai (appWithPool getPool) "GET /todos" do
       resp <- Test.get "/todos"
       assertStatus 200 resp
-      assertBodyContains "<section class=\"todoapp\">" resp
+      assertBodyContains "<section class=\"todoapp\"" resp
       assertBodyContains "<h1>todos</h1>" resp
       assertBodyContains "What needs to be done?" resp
       assertBodyContains "class=\"new-todo\"" resp
-      assertBodyContains "hx-get=\"/todos/list\"" resp
-      assertBodyContains "hx-trigger=\"input changed delay:500ms\"" resp
-      assertBodyContains "hx-include=\"#todo-list-form input[name=&#39;filter&#39;]\"" resp
+      assertBodyContains "hx-include=\"#add-form\"" resp
       assertBodyContains "hx-swap=\"outerMorph\"" resp
-      assertBodyContains "hx-sync=\"closest form:abort\"" resp
+      assertBodyContains "type=\"application/x-scittle\"" resp
+      assertBodyContains "src=\"/todo-filter.cljs\"" resp
+      -- Filter state lives in the DOM on the never-swapped app root, and the
+      -- hooks ride on hx-on attributes there: DOM events take one colon,
+      -- htmx events two (hx-on::finally:swap == htmx:finally:swap), because
+      -- htmx rewrites the "::" form to the "htmx:"-prefixed event name.
+      assertBodyContains "data-filter-mode=\"all\"" resp
+      assertBodyContains "hx-on:input=\"window.todoFilterApply()\"" resp
+      assertBodyContains "hx-on:click=\"const a = event.target.closest(" resp
+      assertBodyContains "hx-on::finally:swap=\"window.todoFilterApply()\"" resp
+      assertBodyContains "window.todoFilterSet" resp
+      assertBodyContains "data-filter=\"all\"" resp
+      assertBodyContains "data-filter=\"active\"" resp
+      assertBodyContains "data-filter=\"completed\"" resp
+      assertBodyDoesNotContain "hx-get=\"/todos/list\"" resp
+      assertBodyDoesNotContain "?filter" resp
+      assertBodyDoesNotContain "hx-sync=\"closest form:abort\"" resp
+      -- Typing must never reach the server, and the page keeps no filter
+      -- state of its own: no input trigger, no observer, no JS atom.
+      assertBodyDoesNotContain "hx-trigger=\"input" resp
+      assertBodyDoesNotContain "MutationObserver" resp
+      assertBodyDoesNotContain "htmx.live.q" resp
+      assertBodyDoesNotContain "hx-live.min.js" resp
       assertBodyContains "hx-post=\"/todos\"" resp
       assertBodyContains "class=\"todo-list\"" resp
       assertBodyContains "Double-click to edit, Enter to add" resp
@@ -227,7 +247,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertStatus 200 respList2
       assertBodyDoesNotContain "Buy water" respList2
 
-      -- 5. Create multiple, toggle, search, clear
+      -- 5. Create multiple, toggle, filter, clear
       _ <- postForm "/todos" "title=Task+A"
       _ <- postForm "/todos" "title=Task+B"
       _ <- postForm "/todos" "title=Task+C"
@@ -235,16 +255,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertStatus 200 respDupAdd
       assertBodyContains "duplicate-flash" respDupAdd
 
-      -- Search matches the Clojure app's case-insensitive substring behavior.
-      respSearch <- Test.get "/todos/list?title=ask%20A"
-      assertStatus 200 respSearch
-      assertBodyContains "Task A" respSearch
-      assertBodyDoesNotContain "Task B" respSearch
-
-      respNonSubstringSearch <- Test.get "/todos/list?title=Ta%20A"
-      assertStatus 200 respNonSubstringSearch
-      assertBodyDoesNotContain "Task A" respNonSubstringSearch
-
+      -- Live search is client-side (scittle); the server no longer filters by title.
       -- Get all IDs from the public HTML representation and toggle first two.
       respAll <- Test.get "/todos/list"
       allIds <- liftIO $ requireTodoIds "three created todos" 3 respAll
@@ -267,19 +278,13 @@ testRoute = withResource acquirePool releasePool \getPool ->
           pass
         _ -> liftIO $ assertFailure "Expected at least 2 todos"
 
-      -- Verify completed/active state through filtered HTTP representations.
-      respCompleted <- Test.get "/todos/list?filter=completed"
-      assertStatus 200 respCompleted
-      assertBodyContains "Task A" respCompleted
-      assertBodyContains "Task B" respCompleted
-      assertBodyDoesNotContain "Task C" respCompleted
-
-      -- Filter active
-      respActive <- Test.get "/todos/list?filter=active"
-      assertStatus 200 respActive
-      assertBodyContains "Task C" respActive
-      assertBodyDoesNotContain "Task A" respActive
-      assertBodyDoesNotContain "Task B" respActive
+      -- Filtering (search + all/active/completed) is client-side (scittle);
+      -- the server always renders every todo.
+      respUnfiltered <- Test.get "/todos/list"
+      assertStatus 200 respUnfiltered
+      assertBodyContains "Task A" respUnfiltered
+      assertBodyContains "Task B" respUnfiltered
+      assertBodyContains "Task C" respUnfiltered
 
       -- Clear completed
       respClear <- postForm "/todos/clear" ""
@@ -291,6 +296,21 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "Task C" respRemaining
       assertBodyDoesNotContain "Task A" respRemaining
       assertBodyDoesNotContain "Task B" respRemaining
+  , testWai (appWithPool getPool) "GET /todo-filter.cljs serves the client filter" do
+      resp <- Test.get "/todo-filter.cljs"
+      assertStatus 200 resp
+      -- Served from the compiled-in copy (wai-app-static, eMimeType), so the
+      -- response must carry that content type and must not be cacheable: the
+      -- embedded copy is only as fresh as the last compile.
+      assertContentTypePrefix "application/x-scittle" resp
+      assertHeaderContains "Cache-Control" "no-store" resp
+      -- The ns form keeps the file immune to load order: scittle evaluates each
+      -- x-scittle script in the ns the previous script left current, so another
+      -- script's (:refer-clojure :exclude [...]) would otherwise apply here.
+      assertBodyContains "ns todo-filter" resp
+      assertBodyContains "todoFilterApply" resp
+      assertBodyContains "todoFilterSet" resp
+      assertBodyContains "data-filter-mode" resp
   ]
 
 appWithPool :: IO Pool -> Application
@@ -334,6 +354,16 @@ assertContentTypePrefix expected response =
           ("expected Content-Type prefix " <> show expected <> ", got " <> show contentType)
           (expected `BS.isPrefixOf` contentType)
       Nothing -> assertFailure "response did not include Content-Type"
+
+assertHeaderContains :: HeaderName -> ByteString -> WaiTest.SResponse -> Test.Session ()
+assertHeaderContains name expected response =
+  liftIO $
+    case List.lookup name (WaiTest.simpleHeaders response) of
+      Just value ->
+        assertBool
+          ("expected " <> show name <> " to contain " <> show expected <> ", got " <> show value)
+          (expected `BS.isInfixOf` value)
+      Nothing -> assertFailure ("response did not include " <> show name)
 
 responseBodyText :: WaiTest.SResponse -> Text
 responseBodyText =

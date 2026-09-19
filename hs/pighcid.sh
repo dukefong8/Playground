@@ -53,9 +53,10 @@ PROMPT="Fix GHC errors with minimal correct edits; read ghcid.txt until it outpu
 report() {
   [[ -n $TARGET ]] || return 0
   # Right-align the message so it doesn't sit at column 0 over the window list, and
-  # yellow so it stands out. Set here rather than in message-style, which would
-  # restyle every message including the command prompt.
-  tmux display-message -t "$TARGET" -d "$1" "#[align=right,fg=yellow]$2" 2>/dev/null || true
+  # colour it by role: white for the transient "working" line, yellow for the
+  # result the caller passes explicitly. Set here rather than in message-style,
+  # which would restyle every message including the command prompt.
+  tmux display-message -t "$TARGET" -d "$1" "#[align=right,fg=${3:-white}]$2" 2>/dev/null || true
   # Same text again, this time where it lasts: status-right interpolates
   # #{@ghcid_status}, which the overlay above cannot do — that one dies on the next
   # key press. -w keeps it to the window the hook ran in.
@@ -72,7 +73,7 @@ report 300000 'pighcid: fixing the build error...'
 # logs the whole stream to .pighcid.log.
 rc=0
 out=$(printf '%s\n\n%s\n' "$(<"$GHCID")" "$PROMPT" |
-  pi -p --tools read,edit,find,git \
+  pi -p --tools read,edit,git \
     --provider deepseek --model deepseek-flash --thinking low |&
   tee "$LOG") || rc=$?
 
@@ -90,6 +91,6 @@ fi
 # Cap the whole status text, prefix included — capping the summary alone leaves the
 # stored value 9 chars longer than the status line's budget.
 summary=$(printf '%s' "pighcid: ${summary:-pi exited $rc}" | tr -d '\r' | tr '\n' ' ' | cut -c1-160)
-report "${PIGHCID_STATUS_MS:-60000}" "$summary"
+report "${PIGHCID_STATUS_MS:-60000}" "$summary" yellow
 
 exit "$rc"
