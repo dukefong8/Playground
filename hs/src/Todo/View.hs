@@ -1,9 +1,9 @@
 {-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE GHC2024           #-}
-{-# LANGUAGE NoFieldSelectors  #-}
+{-# LANGUAGE GHC2024             #-}
+{-# LANGUAGE NoFieldSelectors    #-}
 {-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes       #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE QuasiQuotes         #-}
 module Todo.View
   ( TodoLinks(..)
   , todoLinks
@@ -21,11 +21,8 @@ module Todo.View
   , listSwap
   ) where
 
-import Prelude hiding (id)
-
 import Htmx.Prelude
-import Site.Static (staticUrl)
-import Todo.Static (todoFilterAsset)
+import Todo.Static (todoFilterUrl)
 import Todo.Type
 
 -- | URL construction for todo views, parameterized over the mount prefix so
@@ -170,7 +167,7 @@ todoHead = [hsx|
       display: none;
     }
   </style>
-  <script src={staticUrl todoFilterAsset} type="application/x-scittle"></script>
+  <script src={todoFilterUrl} type="application/x-scittle"></script>
 |]
 
 todoAddForm :: TodoLinks -> Maybe Text -> Html ()

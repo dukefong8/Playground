@@ -16,7 +16,6 @@ module Htmx.Prelude
   , pageShell
   , htmlResponse
   , viewResponse
-  , htmlBody
   , module Lucid
   ) where
 
@@ -48,11 +47,6 @@ htmlResponse status body =
 viewResponse :: (a -> Html ()) -> a -> Response
 viewResponse renderHtml value =
   htmlResponse status200 (renderHtml value)
-
--- | The rendered bytes, for the one caller that cannot take a 'Response':
--- servant's @ServerError@ carries a body, not a response.
-htmlBody :: Html a -> LByteString
-htmlBody = Lucid.renderBS
 
 pageShell :: Html () -> Html () -> Html ()
 pageShell customHead body = [hsx|

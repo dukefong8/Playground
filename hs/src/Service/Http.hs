@@ -12,7 +12,6 @@ module Service.Http
   , runRouteHandler
   , throwRouteError
   , parseRequestBody
-  , checkedInt64
   , runDbOr500
   , errorResponse
   ) where
@@ -47,12 +46,6 @@ parseRequestBody req = do
   case urlDecodeAsForm body of
     Left err -> invalidBody err
     Right a  -> pure a
-
-checkedInt64 :: Integer -> Maybe Int64
-checkedInt64 value
-  | value < fromIntegral (minBound :: Int64) = Nothing
-  | value > fromIntegral (maxBound :: Int64) = Nothing
-  | otherwise = Just (fromIntegral value)
 
 errorResponse :: RouteError -> Response
 errorResponse (RouteError status body) =

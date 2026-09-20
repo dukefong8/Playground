@@ -32,8 +32,7 @@ import Servant.Server.Generic
 import Servant.Server.Internal.Handler (pattern MkHandler)
 
 import Home.Route (notFoundResponse)
-import Home.View (page404)
-import Htmx.Prelude (HTML, Html, IsHtmxRequest, htmlBody)
+import Htmx.Prelude (HTML, Html, IsHtmxRequest)
 import Service.Hasql hiding (ServerError)
 import Service.Http
 import Todo.Handler
@@ -88,23 +87,17 @@ todoServer pool = TodoApi
 
 todoItemServer :: Pool -> Integer -> TodoItemApi AsServer
 todoItemServer pool rawId = TodoItemApi
-  { toggleTodo_ = withTodoId rawId $ \todoId _hxReq ->
+  { toggleTodo_ = \_hxReq ->
       todoMutationViewHtml servantLinks <$> runRouteHandlerServant (toggleTodo pool todoId)
-  , deleteTodo_ = withTodoId rawId $ \todoId _hxReq ->
+  , deleteTodo_ = \_hxReq ->
       todoMutationViewHtml servantLinks <$> runRouteHandlerServant (deleteTodo pool todoId)
-  , editTodoForm_ = withTodoId rawId $ \todoId _hxReq ->
+  , editTodoForm_ = \_hxReq ->
       todoEditViewHtml servantLinks <$> runRouteHandlerServant (editTodoForm pool todoId)
-  , updateTodo_ = \hxReq body ->
-      withTodoId rawId (\todoId _ -> todoMutationViewHtml servantLinks <$> runRouteHandlerServant (updateTodo pool todoId body)) hxReq
+  , updateTodo_ = \_hxReq body ->
+      todoMutationViewHtml servantLinks <$> runRouteHandlerServant (updateTodo pool todoId body)
   }
-
--- | Boundary-checked capture: out-of-range ids 404 with the shared page,
--- exactly like 'Todo.Route.routeTodoIdOr404'.
-withTodoId :: Integer -> (TodoId -> Maybe IsHtmxRequest -> Handler (Html ())) -> Maybe IsHtmxRequest -> Handler (Html ())
-withTodoId rawId continue hxReq =
-  case toTodoId rawId of
-    Nothing     -> MkHandler $ pure $ Left $ ServerError 404 "Not Found" (htmlBody page404) [(hContentType, "text/html; charset=utf-8")]
-    Just todoId -> continue todoId hxReq
+  where
+    todoId = toTodoId rawId
 
 -- | Run a shared 'RouteHandler' inside servant, preserving its exact status
 -- and body (including the 404-with-message from 'editTodoForm').

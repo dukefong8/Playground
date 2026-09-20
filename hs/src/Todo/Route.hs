@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 
 -- | The todo routes served through ihp-router, mounted at @/app@ by 'Site'.
--- The client script under @/static@ is served separately by 'Site.Static'.
+-- The client script under @/static@ is served separately by 'Site'.
 module Todo.Route
   ( ihpApp
   ) where
@@ -48,10 +48,10 @@ GET /app/todos                    TodosPageAction
 GET /app/todos/list               TodoListAction
 POST /app/todos                   AddTodoAction
 POST /app/todos/clear             ClearTodosAction
-PATCH /app/todos/{id}             ToggleTodoAction { todoId = #id }
-DELETE /app/todos/{id}            DeleteTodoAction { todoId = #id }
-GET /app/todos/{id}/edit          EditTodoAction { todoId = #id }
-PUT /app/todos/{id}               UpdateTodoAction { todoId = #id }
+PATCH /app/todos/{todoId}         ToggleTodoAction { todoId = #todoId }
+DELETE /app/todos/{todoId}        DeleteTodoAction { todoId = #todoId }
+GET /app/todos/{todoId}/edit      EditTodoAction { todoId = #todoId }
+PUT /app/todos/{todoId}           UpdateTodoAction { todoId = #todoId }
 POST /app/todos/generate          GenerateTodosAction
 |]
 
@@ -71,29 +71,15 @@ dispatchTodo pool AddTodoAction req respond =
 dispatchTodo pool ClearTodosAction req respond =
   runView (todoMutationViewHtml ihpLinks) (clearCompleted pool) req respond
 dispatchTodo pool (ToggleTodoAction rawId) req respond =
-  case routeTodoIdOr404 rawId of
-    Left response -> respond response
-    Right todoId  -> runView (todoMutationViewHtml ihpLinks) (toggleTodo pool todoId) req respond
+  runView (todoMutationViewHtml ihpLinks) (toggleTodo pool (toTodoId rawId)) req respond
 dispatchTodo pool (DeleteTodoAction rawId) _req respond =
-  case routeTodoIdOr404 rawId of
-    Left response -> respond response
-    Right todoId  -> runView (todoMutationViewHtml ihpLinks) (deleteTodo pool todoId) _req respond
+  runView (todoMutationViewHtml ihpLinks) (deleteTodo pool (toTodoId rawId)) _req respond
 dispatchTodo pool (EditTodoAction rawId) _req respond =
-  case routeTodoIdOr404 rawId of
-    Left response -> respond response
-    Right todoId  -> runView (todoEditViewHtml ihpLinks) (editTodoForm pool todoId) _req respond
+  runView (todoEditViewHtml ihpLinks) (editTodoForm pool (toTodoId rawId)) _req respond
 dispatchTodo pool (UpdateTodoAction rawId) req respond =
-  case routeTodoIdOr404 rawId of
-    Left response -> respond response
-    Right todoId  -> withParsedBody req (updateTodo pool todoId) (todoMutationViewHtml ihpLinks) respond
+  withParsedBody req (updateTodo pool (toTodoId rawId)) (todoMutationViewHtml ihpLinks) respond
 dispatchTodo pool GenerateTodosAction req respond =
   withParsedBody req (generateTodos pool) (todoMutationViewHtml ihpLinks) respond
-
-routeTodoIdOr404 :: Integer -> Either Response TodoId
-routeTodoIdOr404 rawId =
-  case toTodoId rawId of
-    Nothing     -> Left notFoundResponse
-    Just todoId -> Right todoId
 
 runView :: (a -> Html ()) -> RouteHandler a -> Application
 runView renderHtml action _req respond = do

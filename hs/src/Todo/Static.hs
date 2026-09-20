@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | The todo filter's client script, contributed to the site's static
--- application ('Site.Static') rather than served by a route of its own.
+-- application (in 'Site') rather than served by a route of its own.
 module Todo.Static
   ( todoFilterAsset
+  , todoFilterUrl
   , assetSources
   , assetEntries
   ) where
@@ -11,14 +12,20 @@ module Todo.Static
 import WaiAppStatic.Storage.Embedded (EmbeddableEntry (..))
 
 -- | The script: its source under the project root and — since the site serves
--- that directory at @\/static@ — the path it is served at, which is how
--- 'Site.Static' keys the entry ('Site.Static.staticUrl' builds the URL the page
--- head loads).
+-- that directory at @\/static@ — the path it is served at, which is how 'Site'
+-- keys the entry.
 todoFilterAsset :: FilePath
 todoFilterAsset = "static/todo_filter.cljs"
 
--- | Registered through 'Site.Static' so an edit to the source recompiles the
--- embedding.
+-- | Where the page head loads the script from.
+--
+-- Derived here rather than handed down by 'Site': a view cannot import the root
+-- module (it dispatches to the route modules that import the views), so an
+-- asset's URL belongs next to the key it is embedded under.
+todoFilterUrl :: Text
+todoFilterUrl = "/" <> toText todoFilterAsset
+
+-- | Registered through 'Site' so an edit to the source recompiles the embedding.
 assetSources :: [FilePath]
 assetSources = [todoFilterAsset]
 

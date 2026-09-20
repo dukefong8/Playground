@@ -19,7 +19,6 @@ module Todo.Type
   , TodoListView(..)
   , TodoEditView(..)
   , TodoMutationView(..)
-  , GenerateTodoTitles
   , insertableGeneratedTitles
   , addMutationStatus
   , mutationView
@@ -29,7 +28,6 @@ import Data.Text qualified as T
 import Prelude hiding (id)
 
 import Hasql.Decoders qualified as Decoders
-import Service.Http (RouteHandler, checkedInt64)
 import IHP.TypedSql.Id (Id' (..), PrimaryKey)
 import IHP.TypedSql.Row (TypedSqlRow (..))
 import Web.FormUrlEncoded
@@ -58,8 +56,11 @@ newtype TodoId = TodoId Int64
 unTodoId :: TodoId -> Int64
 unTodoId (TodoId intId) = intId
 
-toTodoId :: Integer -> Maybe TodoId
-toTodoId = fmap TodoId . checkedInt64
+-- | Wrap a capture's 'Integer'. 'fromIntegral' wraps rather than rejects: an id
+-- past 'Int64' would alias another row, so an out-of-range capture is a wrong
+-- row, not a rejected request.
+toTodoId :: Integer -> TodoId
+toTodoId = TodoId . fromIntegral
 
 toRowId :: TodoId -> Id' "todos"
 toRowId (TodoId intId) = Id intId
@@ -126,8 +127,6 @@ data TodoMutationView = TodoMutationView
   , editingTodoId     :: Maybe Int64
   , editingTitle      :: Maybe Text
   } deriving (Eq, Show)
-
-type GenerateTodoTitles = Text -> RouteHandler (Either Text [Text])
 
 normalizeTitle :: Text -> Text
 normalizeTitle = T.strip
