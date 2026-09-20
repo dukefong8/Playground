@@ -29,7 +29,7 @@ import Data.Text qualified as T
 import Prelude hiding (id)
 
 import Hasql.Decoders qualified as Decoders
-import Http (RouteHandler, checkedInt64)
+import Service.Http (RouteHandler, checkedInt64)
 import IHP.TypedSql.Id (Id' (..), PrimaryKey)
 import IHP.TypedSql.Row (TypedSqlRow (..))
 import Web.FormUrlEncoded

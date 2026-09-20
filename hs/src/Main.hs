@@ -7,8 +7,8 @@ module Main
 import Network.Wai.Handler.Warp qualified as Wai
 import Rapid
 
-import Database
-import Logger (closeLogger)
+import Service.Hasql
+import Service.Logger (closeLogger)
 import Site (app)
 
 -- $> main

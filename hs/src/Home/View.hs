@@ -6,7 +6,7 @@ module Home.View
   , page404
   ) where
 
-import Htmx
+import Htmx.Prelude
 
 index :: Html ()
 index = [hsx|

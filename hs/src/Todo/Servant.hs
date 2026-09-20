@@ -31,13 +31,11 @@ import Servant.API.Raw (RawM)
 import Servant.Server.Generic
 import Servant.Server.Internal.Handler (pattern MkHandler)
 
-import Database hiding (ServerError)
--- FIXME: http redirect instead import Home modules
 import Home.Route (notFoundResponse)
 import Home.View (page404)
-import Htmx (HTML, Html, renderBS)
-import Htmx.Type
-import Http
+import Htmx.Prelude (HTML, Html, IsHtmxRequest, htmlBody)
+import Service.Hasql hiding (ServerError)
+import Service.Http
 import Todo.Handler
 import Todo.Type
 import Todo.View
@@ -105,7 +103,7 @@ todoItemServer pool rawId = TodoItemApi
 withTodoId :: Integer -> (TodoId -> Maybe IsHtmxRequest -> Handler (Html ())) -> Maybe IsHtmxRequest -> Handler (Html ())
 withTodoId rawId continue hxReq =
   case toTodoId rawId of
-    Nothing     -> MkHandler $ pure $ Left $ ServerError 404 "Not Found" (renderBS page404) [(hContentType, "text/html; charset=utf-8")]
+    Nothing     -> MkHandler $ pure $ Left $ ServerError 404 "Not Found" (htmlBody page404) [(hContentType, "text/html; charset=utf-8")]
     Just todoId -> continue todoId hxReq
 
 -- | Run a shared 'RouteHandler' inside servant, preserving its exact status

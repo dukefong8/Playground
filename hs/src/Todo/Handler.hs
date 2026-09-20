@@ -17,9 +17,9 @@ module Todo.Handler
 
 import Data.Text qualified as T
 
-import Database
-import Http (RouteHandler, runDbOr500, throwRouteError)
-import Logger
+import Service.Hasql
+import Service.Http (RouteHandler, runDbOr500, throwRouteError)
+import Service.Logger
 import Network.HTTP.Types (status404)
 import Todo.Db
 import Todo.Generate (runGenerateTodoTitles)

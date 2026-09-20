@@ -2,7 +2,9 @@
 {-# LANGUAGE GHC2024           #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Logger
+-- | The app logger: fast-logger behind colog actions, plus the handle the
+-- server closes on shutdown.
+module Service.Logger
   ( logDebug
   , logInfo
   , logError

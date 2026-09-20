@@ -21,8 +21,8 @@ import System.IO.Unsafe (unsafePerformIO)
 import Control.Exception qualified as Exception (SomeException, try)
 import Grace.Input qualified (Input (Code))
 import Grace.Interpret qualified as Grace (loadWith, (<~))
-import Http (RouteHandler)
-import Logger
+import Service.Http (RouteHandler)
+import Service.Logger
 import Todo.Type (GenerateTodoTitles)
 
 todoTitlesGenerator :: IORef GenerateTodoTitles

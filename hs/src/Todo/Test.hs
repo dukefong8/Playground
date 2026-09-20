@@ -14,7 +14,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
-import Database
+import Service.Hasql
 import Network.HTTP.Types.Header (HeaderName, RequestHeaders)
 import Network.HTTP.Types.Method (StdMethod (..))
 import Network.Wai
@@ -32,7 +32,7 @@ import Todo.Db
 import Todo.Generate (setGenerateTodoTitles)
 import Todo.Type
 
-import Http (checkedInt64)
+import Service.Http (checkedInt64)
 import IHP.TypedSql.Hasql (sqlExecTypedSession, typedSql)
 
 tasty :: TestTree -> IO ()
@@ -164,7 +164,7 @@ webBehaviorTests name mkApp prefix = withResource acquirePool releasePool \getPo
       assertBodyContains "hx-include=\"#add-form\"" resp
       assertBodyContains "hx-swap=\"outerMorph\"" resp
       assertBodyContains "type=\"application/x-scittle\"" resp
-      assertBodyContains "src=\"/todo/todo_filter.cljs\"" resp
+      assertBodyContains "src=\"/static/todo_filter.cljs\"" resp
       -- Filter state lives in the DOM on the never-swapped app root, and the
       -- hooks ride on hx-on attributes there: DOM events take one colon,
       -- htmx events two (hx-on::finally:swap == htmx:finally:swap), because
@@ -319,8 +319,8 @@ webBehaviorTests name mkApp prefix = withResource acquirePool releasePool \getPo
       assertBodyContains "Task C" respRemaining
       assertBodyDoesNotContain "Task A" respRemaining
       assertBodyDoesNotContain "Task B" respRemaining
-  , testWai (mkApp getPool) "GET /todo/todo_filter.cljs serves the client filter" do
-      resp <- Test.get "/todo/todo_filter.cljs"
+  , testWai (mkApp getPool) "GET /static/todo_filter.cljs serves the client filter" do
+      resp <- Test.get "/static/todo_filter.cljs"
       assertStatus 200 resp
       -- Served from the compiled-in copy (wai-app-static, eMimeType), so the
       -- response must carry that content type and must not be cacheable: the

@@ -2,7 +2,11 @@
 {-# LANGUAGE GHC2024           #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Http
+-- | Shared web-layer helpers: the route handler monad and its error type, request
+-- body parsing, the error response, and the db action runner that maps a failed
+-- session onto a 500. Html responses are built by "Htmx.Prelude", which owns
+-- rendering.
+module Service.Http
   ( RouteHandler
   , RouteError(..)
   , runRouteHandler
@@ -10,13 +14,11 @@ module Http
   , parseRequestBody
   , checkedInt64
   , runDbOr500
-  , htmlResponse
-  , viewResponse
   , errorResponse
   ) where
 
-import Database (Pool, Session, runDb)
-import Network.HTTP.Types (Status, hContentType, status200, status400, status500)
+import Service.Hasql (Pool, Session, runDb)
+import Network.HTTP.Types (Status, hContentType, status400, status500)
 import Network.Wai (Request, Response, responseLBS, strictRequestBody)
 import Web.FormUrlEncoded (FromForm, urlDecodeAsForm)
 
@@ -51,14 +53,6 @@ checkedInt64 value
   | value < fromIntegral (minBound :: Int64) = Nothing
   | value > fromIntegral (maxBound :: Int64) = Nothing
   | otherwise = Just (fromIntegral value)
-
-htmlResponse :: Status -> LByteString -> Response
-htmlResponse status body =
-  responseLBS status [(hContentType, "text/html; charset=utf-8")] body
-
-viewResponse :: (a -> LByteString) -> a -> Response
-viewResponse renderHtml value =
-  htmlResponse status200 (renderHtml value)
 
 errorResponse :: RouteError -> Response
 errorResponse (RouteError status body) =

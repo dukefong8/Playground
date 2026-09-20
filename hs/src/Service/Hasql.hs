@@ -1,8 +1,10 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- TODO: rename to Hasql
-module Database
+-- | The Hasql service: the connection pool the app threads through its
+-- handlers, the session runner over it, and the hasql session, statement and
+-- error types re-exported so call sites need only this module.
+module Service.Hasql
   ( Pool.Pool
   , module Hasql.Session
   , module Hasql.Statement

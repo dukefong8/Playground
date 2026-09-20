@@ -6,20 +6,21 @@
 {-# LANGUAGE TemplateHaskell     #-}
 
 -- | The todo routes served through ihp-router, mounted at @/app@ by 'Site'.
+-- The client script under @/static@ is served separately by 'Site.Static'.
 module Todo.Route
   ( ihpApp
   ) where
 
-import Data.ByteString.Lazy qualified as LBS
 import Network.HTTP.Types (StdMethod (..))
 import Network.Wai (Application, Request, Response, ResponseReceived)
 import Web.FormUrlEncoded (FromForm)
 
-import Database
 import Home.Route (notFoundResponse)
-import Http
+import Htmx.Prelude (Html, viewResponse)
 import IHP.Router.Trie (mergeTrie)
 import IHP.Router.WAI (HasPath (..), UrlCapture (..), routeTrieMiddleware, routes)
+import Service.Hasql
+import Service.Http
 import Todo.Handler
 import Todo.Type
 import Todo.View
@@ -62,31 +63,31 @@ ihpApp pool =
 
 dispatchTodo :: Pool -> TodoRoute -> Application
 dispatchTodo pool TodosPageAction req respond =
-  runView (renderTodosViewHtml ihpLinks) (getTodosPage pool) req respond
+  runView (todosViewHtml ihpLinks) (getTodosPage pool) req respond
 dispatchTodo pool TodoListAction req respond =
-  runView (renderTodoListViewHtml ihpLinks) (getTodoListPartial pool) req respond
+  runView (todoListViewHtml ihpLinks) (getTodoListPartial pool) req respond
 dispatchTodo pool AddTodoAction req respond =
-  withParsedBody req (addTodo pool) (renderTodoMutationViewHtml ihpLinks) respond
+  withParsedBody req (addTodo pool) (todoMutationViewHtml ihpLinks) respond
 dispatchTodo pool ClearTodosAction req respond =
-  runView (renderTodoMutationViewHtml ihpLinks) (clearCompleted pool) req respond
+  runView (todoMutationViewHtml ihpLinks) (clearCompleted pool) req respond
 dispatchTodo pool (ToggleTodoAction rawId) req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
-    Right todoId  -> runView (renderTodoMutationViewHtml ihpLinks) (toggleTodo pool todoId) req respond
+    Right todoId  -> runView (todoMutationViewHtml ihpLinks) (toggleTodo pool todoId) req respond
 dispatchTodo pool (DeleteTodoAction rawId) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
-    Right todoId  -> runView (renderTodoMutationViewHtml ihpLinks) (deleteTodo pool todoId) _req respond
+    Right todoId  -> runView (todoMutationViewHtml ihpLinks) (deleteTodo pool todoId) _req respond
 dispatchTodo pool (EditTodoAction rawId) _req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
-    Right todoId  -> runView (renderTodoEditViewHtml ihpLinks) (editTodoForm pool todoId) _req respond
+    Right todoId  -> runView (todoEditViewHtml ihpLinks) (editTodoForm pool todoId) _req respond
 dispatchTodo pool (UpdateTodoAction rawId) req respond =
   case routeTodoIdOr404 rawId of
     Left response -> respond response
-    Right todoId  -> withParsedBody req (updateTodo pool todoId) (renderTodoMutationViewHtml ihpLinks) respond
+    Right todoId  -> withParsedBody req (updateTodo pool todoId) (todoMutationViewHtml ihpLinks) respond
 dispatchTodo pool GenerateTodosAction req respond =
-  withParsedBody req (generateTodos pool) (renderTodoMutationViewHtml ihpLinks) respond
+  withParsedBody req (generateTodos pool) (todoMutationViewHtml ihpLinks) respond
 
 routeTodoIdOr404 :: Integer -> Either Response TodoId
 routeTodoIdOr404 rawId =
@@ -94,14 +95,14 @@ routeTodoIdOr404 rawId =
     Nothing     -> Left notFoundResponse
     Just todoId -> Right todoId
 
-runView :: (a -> LBS.ByteString) -> RouteHandler a -> Application
-runView renderHtml action req respond = do
+runView :: (a -> Html ()) -> RouteHandler a -> Application
+runView renderHtml action _req respond = do
   result <- runRouteHandler action
   respond case result of
     Left err    -> errorResponse err
     Right value -> viewResponse renderHtml value
 
-withParsedBody :: FromForm a => Request -> (a -> RouteHandler b) -> (b -> LBS.ByteString) -> (Response -> IO ResponseReceived) -> IO ResponseReceived
+withParsedBody :: FromForm a => Request -> (a -> RouteHandler b) -> (b -> Html ()) -> (Response -> IO ResponseReceived) -> IO ResponseReceived
 withParsedBody req action renderHtml respond = do
   parsed <- runRouteHandler (parseRequestBody req)
   case parsed of

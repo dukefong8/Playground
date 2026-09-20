@@ -7,10 +7,6 @@
 module Todo.View
   ( TodoLinks(..)
   , todoLinks
-  , renderTodosViewHtml
-  , renderTodoListViewHtml
-  , renderTodoEditViewHtml
-  , renderTodoMutationViewHtml
   , todosViewHtml
   , todoListViewHtml
   , todoEditViewHtml
@@ -25,11 +21,11 @@ module Todo.View
   , listSwap
   ) where
 
-import Data.ByteString.Lazy qualified as LBS
 import Prelude hiding (id)
 
-import Htmx
-import Todo.Filter (filterScriptFile)
+import Htmx.Prelude
+import Site.Static (staticUrl)
+import Todo.Static (todoFilterAsset)
 import Todo.Type
 
 -- | URL construction for todo views, parameterized over the mount prefix so
@@ -51,14 +47,8 @@ todoLinks prefix = TodoLinks
   , linkEdit = \todoId -> prefix <> "/todos/" <> show todoId <> "/edit"
   }
 
-renderTodosViewHtml :: TodoLinks -> TodosView -> LBS.ByteString
-renderTodosViewHtml links = renderBS . todosViewHtml links
-
 todosViewHtml :: TodoLinks -> TodosView -> Html ()
 todosViewHtml links todosView = todoPage links todosView.todos
-
-renderTodoListViewHtml :: TodoLinks -> TodoListView -> LBS.ByteString
-renderTodoListViewHtml links = renderBS . todoListViewHtml links
 
 todoListViewHtml :: TodoLinks -> TodoListView -> Html ()
 todoListViewHtml links listView =
@@ -68,14 +58,8 @@ todoListViewHtml links listView =
     listView.highlightedTodoId
     listView.outOfBand
 
-renderTodoEditViewHtml :: TodoLinks -> TodoEditView -> LBS.ByteString
-renderTodoEditViewHtml links = renderBS . todoEditViewHtml links
-
 todoEditViewHtml :: TodoLinks -> TodoEditView -> Html ()
 todoEditViewHtml links (TodoEditView todo) = todoEditForm links todo
-
-renderTodoMutationViewHtml :: TodoLinks -> TodoMutationView -> LBS.ByteString
-renderTodoMutationViewHtml links = renderBS . todoMutationViewHtml links
 
 todoMutationViewHtml :: TodoLinks -> TodoMutationView -> Html ()
 todoMutationViewHtml links mutationResult = case mutationResult.mutation of
@@ -186,7 +170,7 @@ todoHead = [hsx|
       display: none;
     }
   </style>
-  <script src={"/todo/" <> filterScriptFile} type="application/x-scittle"></script>
+  <script src={staticUrl todoFilterAsset} type="application/x-scittle"></script>
 |]
 
 todoAddForm :: TodoLinks -> Maybe Text -> Html ()

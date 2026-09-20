@@ -13,7 +13,7 @@ module Todo.Db
   , updateTodoTitleSession
   ) where
 
-import Database
+import Service.Hasql
 import IHP.TypedSql.Hasql (sqlExecTypedSession, sqlQueryTypedSession, typedSql)
 import IHP.TypedSql.Id (Id' (..))
 import Todo.Type

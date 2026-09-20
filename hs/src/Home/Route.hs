@@ -19,8 +19,7 @@ import Network.HTTP.Types (StdMethod (..), status200, status404)
 import Network.Wai (Application, Response)
 
 import Home.View (index, page404)
-import Htmx (renderBS)
-import Http (htmlResponse)
+import Htmx.Prelude (htmlResponse)
 import IHP.Router.WAI (HasPath (..), routeTrieMiddleware, routes)
 
 data HomeRoute
@@ -50,7 +49,7 @@ homeApp =
     fallback _req respond = respond notFoundResponse
 
 homeResponse :: Response
-homeResponse = htmlResponse status200 (renderBS index)
+homeResponse = htmlResponse status200 index
 
 notFoundResponse :: Response
-notFoundResponse = htmlResponse status404 (renderBS page404)
+notFoundResponse = htmlResponse status404 page404
