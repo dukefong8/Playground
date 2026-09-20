@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- TODO: rename to Hasql
 module Database
   ( Pool.Pool
   , module Hasql.Session

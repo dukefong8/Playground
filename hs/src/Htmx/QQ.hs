@@ -6,6 +6,14 @@ import IHP.HSX.Lucid2.QQ (customHsx)
 import IHP.HSX.Parser
 import Language.Haskell.TH.Quote
 
+-- Attribute allowlist sources (htmx v4):
+--   https://four.htmx.org/reference
+--   https://four.htmx.org/extensions
+--
+-- NOTE: hx-on / hx-on:* and hx-live / hx-live:* are intentionally absent here.
+-- Both families are open-ended, so they are accepted by prefix in
+-- IHP.HSX.Parser.hsxAttributeName
+-- (~/dev/ihp/ihp-hsx/parser/IHP/HSX/Parser.hs).
 hsx :: QuasiQuoter
 hsx = customHsx
     (HsxSettings
@@ -15,6 +23,7 @@ hsx = customHsx
             [ "hx-action"
             , "hx-alpine-compat"
             , "hx-boost"
+            , "hx-boost:inherited"
             , "hx-browser-indicator"
             , "hx-config"
             , "hx-confirm"
@@ -23,6 +32,7 @@ hsx = customHsx
             , "hx-disable"
             , "hx-download"
             , "hx-encoding"
+            , "hx-ext"
             , "hx-get"
             , "hx-headers"
             , "hx-head"
@@ -31,21 +41,19 @@ hsx = customHsx
             , "hx-ignore"
             , "hx-include"
             , "hx-indicator"
-            , "hx-live"
             , "hx-method"
             , "hx-morph-skip"
             , "hx-morph-skip-children"
             , "hx-multipart"
+            , "hx-multipart:close"
+            , "hx-multipart:connect"
             , "hx-nonce"
-            , "hx-on"
-            , "hx-on:click"
-            , "hx-on:input"
-            , "hx-on::finally:swap"
             , "hx-optimistic"
             , "hx-patch"
             , "hx-pending"
             , "hx-post"
             , "hx-preload"
+            , "hx-preload:inherited"
             , "hx-preserve"
             , "hx-prompt"
             , "hx-ptag"
@@ -56,17 +64,23 @@ hsx = customHsx
             , "hx-select"
             , "hx-select-oob"
             , "hx-sse"
+            , "hx-sse:close"
+            , "hx-sse:connect"
             , "hx-status"
             , "hx-swap"
+            , "hx-swap:inherited"
             , "hx-swap-oob"
             , "hx-sync"
             , "hx-target"
             , "hx-targets"
+            , "hx-targets:inherited"
             , "hx-trigger"
             , "hx-upsert"
             , "hx-validate"
             , "hx-vals"
             , "hx-ws"
+            , "hx-ws:connect"
+            , "hx-ws:send"
             ]
         }
     )

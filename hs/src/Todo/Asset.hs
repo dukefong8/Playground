@@ -4,14 +4,16 @@
 --
 -- Kept in its own module because Template Haskell's stage restriction requires
 -- the entry list to live somewhere other than the module calling 'mkSettings'.
-module Embedded
+module Todo.Asset
   ( todoFilterEntries
   ) where
 
 import Data.ByteString.Lazy qualified as LBS
 import WaiAppStatic.Storage.Embedded (EmbeddableEntry (..))
 
--- | The todo filter's client source, served at @/todo-filter.cljs@.
+-- | The todo filter's client source. The entry key must match the request
+-- path served by 'Todo.Filter' (@/todo/todo_filter.cljs@): wai-app-static
+-- looks entries up by the full relative path.
 --
 -- The empty etag means "no etag", i.e. clients re-fetch every time: this file
 -- changes with every edit, so a cached copy is always the wrong copy. Embedding
@@ -20,10 +22,10 @@ import WaiAppStatic.Storage.Embedded (EmbeddableEntry (..))
 -- ghciwatch on @**/*.cljs@), so the loop is edit → reload → browser refresh.
 todoFilterEntries :: IO [EmbeddableEntry]
 todoFilterEntries = do
-  cljs <- readFileLBS "static/todo-filter.cljs"
+  cljs <- readFileLBS "static/todo_filter.cljs"
   pure
     [ EmbeddableEntry
-        { eLocation = "todo-filter.cljs"
+        { eLocation = "todo/todo_filter.cljs"
         , eMimeType = "application/x-scittle"
         , eContent = Left ("", cljs)
         }

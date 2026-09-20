@@ -73,7 +73,7 @@ report 300000 'pighcid: fixing the build error...'
 # logs the whole stream to .pighcid.log.
 rc=0
 out=$(printf '%s\n\n%s\n' "$(<"$GHCID")" "$PROMPT" |
-  pi -p --tools read,edit,git \
+  pi -p --tools read,edit,find,git \
     --provider deepseek --model deepseek-flash --thinking low |&
   tee "$LOG") || rc=$?
 

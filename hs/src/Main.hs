@@ -7,9 +7,9 @@ module Main
 import Network.Wai.Handler.Warp qualified as Wai
 import Rapid
 
-import App
 import Database
 import Logger (closeLogger)
+import Site (app)
 
 -- $> main
 main :: IO ()

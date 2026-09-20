@@ -19,5 +19,5 @@
 :set -outputdir .build
 :set -isrc
 
-:add App.TodoTest
+:add Todo.Test
 :add Main

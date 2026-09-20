@@ -1,13 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes       #-}
 module Htmx
-  ( hsx
+  ( HTML
+  , hsx
   , pageShell
   , module Lucid
   ) where
 
 import Htmx.QQ (hsx)
 import Lucid
+import Network.HTTP.Media ((//), (/:))
+import Servant.API
+
+data HTML
+
+instance Accept HTML where
+  contentType _ = "text" // "html" /: ("charset", "utf-8")
+
+instance MimeRender HTML (Html ()) where
+  mimeRender _ = renderBS
 
 pageShell :: Html () -> Html () -> Html ()
 pageShell customHead body = [hsx|

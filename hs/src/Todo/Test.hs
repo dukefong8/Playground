@@ -7,9 +7,10 @@
 {-# LANGUAGE OverloadedRecordDot   #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
-module App.TodoTest (tasty, testRoute, testDB, testGeneratedTitles, testCheckedInt64) where
+module Todo.Test (tasty, testRoute, testRouteServant, testDB, testGeneratedTitles, testCheckedInt64) where
 
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isDigit)
 import Data.List qualified as List
 import Data.Text qualified as T
@@ -26,9 +27,11 @@ import Test.Tasty.Runners.Html (HtmlPath (HtmlPath), htmlRunner)
 import Test.Tasty.Wai hiding (Session, head)
 import Test.Tasty.Wai qualified as Test
 
-import App (app, appWithTodoGenerator)
+import Site (app)
+import Todo.Db
+import Todo.Generate (setGenerateTodoTitles)
+import Todo.Type
 
-import App.Todo
 import Http (checkedInt64)
 import IHP.TypedSql.Hasql (sqlExecTypedSession, typedSql)
 
@@ -121,21 +124,38 @@ testCheckedInt64 =
 
 -- $> tasty testRoute
 testRoute :: TestTree
-testRoute = withResource acquirePool releasePool \getPool ->
-  inOrderTestGroup "Todo web behavior"
-  [ testWai (appWithPool getPool) "Home page" do
+testRoute = webBehaviorTests "Todo web behavior (ihp-router)" appWithPool "/app"
+
+-- $> tasty testRouteServant
+testRouteServant :: TestTree
+testRouteServant = webBehaviorTests "Todo web behavior (servant)" appWithPool "/servant"
+
+-- | The full web-behavior suite, parameterized over the mount prefix so the
+-- ihp-router (/app) and servant (/servant) stacks prove identical behavior
+-- from the same assertions. The pool comes from the per-run resource; the
+-- title generator is the process-global backend, installed per session by the
+-- generate tests below (the suite runs sequentially, so last write wins).
+webBehaviorTests :: String -> (IO Pool -> Application) -> ByteString -> TestTree
+webBehaviorTests name mkApp prefix = withResource acquirePool releasePool \getPool ->
+  inOrderTestGroup name
+  [ testWai (mkApp getPool) "Home page" do
       resp <- Test.get "/"
       assertStatus 200 resp
       assertBodyContains "Welcome" resp
-  , testWai (appWithPool getPool) "Not found" do
-      resp <- Test.get "/notfound"
+      assertBodyContains "/app/todos" resp
+      assertBodyContains "/servant/todos" resp
+  , testWai (mkApp getPool) "Not found" do
+      resp <- Test.get (prefix <> "/notfound")
       assertStatus 404 resp
       assertBodyContains "Not found" resp
-  , testWai (appWithPool getPool) "Method mismatch returns 405" do
+      resp404 <- Test.get "/404"
+      assertStatus 404 resp404
+      assertBodyContains "Not found" resp404
+  , testWai (mkApp getPool) "Method mismatch returns 405" do
       resp <- Test.srequest $ Test.buildRequestWithHeaders POST "/" "" []
       assertStatus 405 resp
-  , testWai (appWithPool getPool) "GET /todos" do
-      resp <- Test.get "/todos"
+  , testWai (mkApp getPool) "GET /todos" do
+      resp <- Test.get (prefix <> "/todos")
       assertStatus 200 resp
       assertBodyContains "<section class=\"todoapp\"" resp
       assertBodyContains "<h1>todos</h1>" resp
@@ -144,7 +164,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "hx-include=\"#add-form\"" resp
       assertBodyContains "hx-swap=\"outerMorph\"" resp
       assertBodyContains "type=\"application/x-scittle\"" resp
-      assertBodyContains "src=\"/todo-filter.cljs\"" resp
+      assertBodyContains "src=\"/todo/todo_filter.cljs\"" resp
       -- Filter state lives in the DOM on the never-swapped app root, and the
       -- hooks ride on hx-on attributes there: DOM events take one colon,
       -- htmx events two (hx-on::finally:swap == htmx:finally:swap), because
@@ -157,7 +177,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "data-filter=\"all\"" resp
       assertBodyContains "data-filter=\"active\"" resp
       assertBodyContains "data-filter=\"completed\"" resp
-      assertBodyDoesNotContain "hx-get=\"/todos/list\"" resp
+      assertBodyDoesNotContain (decodeUtf8 (prefix <> "hx-get=\"/todos/list\"")) resp
       assertBodyDoesNotContain "?filter" resp
       assertBodyDoesNotContain "hx-sync=\"closest form:abort\"" resp
       -- Typing must never reach the server, and the page keeps no filter
@@ -166,16 +186,17 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyDoesNotContain "MutationObserver" resp
       assertBodyDoesNotContain "htmx.live.q" resp
       assertBodyDoesNotContain "hx-live.min.js" resp
-      assertBodyContains "hx-post=\"/todos\"" resp
+      assertBodyContains ("hx-post=\"" <> LBS.fromStrict prefix <> "/todos\"") resp
       assertBodyContains "class=\"todo-list\"" resp
       assertBodyContains "Double-click to edit, Enter to add" resp
       assertBodyContains "I feel lucky today" resp
-      assertBodyContains "hx-post=\"/todos/generate\"" resp
+      assertBodyContains ("hx-post=\"" <> LBS.fromStrict prefix <> "/todos/generate\"") resp
       assertBodyContains "type=\"button\"" resp
-  , testWai (appWithPoolAndGenerator getPool (const (pure (Right ["Buy milk", "Write plan", "Pack lunch"])))) "POST /todos/generate inserts generated titles" do
+  , testWai (mkApp getPool) "POST /todos/generate inserts generated titles" do
       pool <- liftIO getPool
+      liftIO (setGenerateTodoTitles (const (pure (Right ["Buy milk", "Write plan", "Pack lunch"]))))
       _ <- liftIO $ runDb pool truncateTodosSession
-      resp <- postForm "/todos/generate" "title=Plan+my+morning"
+      resp <- postForm (prefix <> "/todos/generate") "title=Plan+my+morning"
       assertStatus 200 resp
       assertBodyContains "id=\"add-form\"" resp
       assertBodyContains "I feel lucky today" resp
@@ -183,39 +204,41 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "Buy milk" resp
       assertBodyContains "Write plan" resp
       assertBodyContains "Pack lunch" resp
-      respList <- Test.get "/todos/list"
+      respList <- Test.get (prefix <> "/todos/list")
       assertStatus 200 respList
       assertBodyContains "Buy milk" respList
       assertBodyContains "Write plan" respList
       assertBodyContains "Pack lunch" respList
-  , testWai (appWithPoolAndGenerator getPool (const (pure (Right ["Task A", "", "task a", "Task B"])))) "POST /todos/generate filters duplicates and empty" do
+  , testWai (mkApp getPool) "POST /todos/generate filters duplicates and empty" do
       pool <- liftIO getPool
+      liftIO (setGenerateTodoTitles (const (pure (Right ["Task A", "", "task a", "Task B"]))))
       _ <- liftIO $ runDb pool truncateTodosSession
-      _ <- postForm "/todos" "title=Task+A"
-      respGen <- postForm "/todos/generate" "title=Generate+tasks"
+      _ <- postForm (prefix <> "/todos") "title=Task+A"
+      respGen <- postForm (prefix <> "/todos/generate") "title=Generate+tasks"
       assertStatus 200 respGen
-      respList <- Test.get "/todos/list"
+      respList <- Test.get (prefix <> "/todos/list")
       _todoIds <- liftIO $ requireTodoIds "generated duplicate filtering" 2 respList
       assertBodyContains "Task A" respList
       assertBodyContains "Task B" respList
-  , testWai (appWithPoolAndGenerator getPool (const (pure (Left "boom")))) "POST /todos/generate failure renders inline message" do
+  , testWai (mkApp getPool) "POST /todos/generate failure renders inline message" do
       pool <- liftIO getPool
+      liftIO (setGenerateTodoTitles (const (pure (Left "boom"))))
       _ <- liftIO $ runDb pool truncateTodosSession
-      resp <- postForm "/todos/generate" "title=test"
+      resp <- postForm (prefix <> "/todos/generate") "title=test"
       assertStatus 200 resp
       assertBodyContains "Could not generate todos; check DEEPSEEK_API_KEY and try again." resp
       assertBodyContains "I feel lucky today" resp
-  , testWai (appWithPool getPool) "user can manage todos through htmx routes" do
+  , testWai (mkApp getPool) "user can manage todos through htmx routes" do
       pool <- liftIO getPool
       _ <- liftIO $ runDb pool truncateTodosSession
 
       -- 1. Create
-      respAdd <- postForm "/todos" "title=Buy+milk"
+      respAdd <- postForm (prefix <> "/todos") "title=Buy+milk"
       assertStatus 200 respAdd
       assertBodyContains "id=\"add-form\"" respAdd
       assertBodyContains "hx-swap-oob=\"outerMorph\"" respAdd
       assertBodyContains "Buy milk" respAdd
-      respList <- Test.get "/todos/list"
+      respList <- Test.get (prefix <> "/todos/list")
       assertStatus 200 respList
       assertBodyContains "Buy milk" respList
 
@@ -224,7 +247,7 @@ testRoute = withResource acquirePool releasePool \getPool ->
       let idStr = encodeUtf8 (show firstId :: Text)
 
       -- 2. Edit Form
-      let editPath = "/todos/" <> idStr <> "/edit"
+      let editPath = prefix <> "/todos/" <> idStr <> "/edit"
       respEdit <- Test.get editPath
       assertStatus 200 respEdit
       assertBodyContains "Buy milk" respEdit
@@ -232,38 +255,38 @@ testRoute = withResource acquirePool releasePool \getPool ->
       assertBodyContains "class=\"edit\"" respEdit
 
       -- 3. Update
-      let updatePath = "/todos/" <> idStr
+      let updatePath = prefix <> "/todos/" <> idStr
       respUpdate <- putForm updatePath "edit-title=Buy+water"
       assertStatus 200 respUpdate
       assertBodyContains "Buy water" respUpdate
 
       -- 4. Delete
-      let deletePath = "/todos/" <> idStr
+      let deletePath = prefix <> "/todos/" <> idStr
       respDelete <- deleteForm deletePath ""
       assertStatus 200 respDelete
 
       -- Verify deletion
-      respList2 <- Test.get "/todos/list"
+      respList2 <- Test.get (prefix <> "/todos/list")
       assertStatus 200 respList2
       assertBodyDoesNotContain "Buy water" respList2
 
       -- 5. Create multiple, toggle, filter, clear
-      _ <- postForm "/todos" "title=Task+A"
-      _ <- postForm "/todos" "title=Task+B"
-      _ <- postForm "/todos" "title=Task+C"
-      respDupAdd <- postForm "/todos" "title=Task+C"
+      _ <- postForm (prefix <> "/todos") "title=Task+A"
+      _ <- postForm (prefix <> "/todos") "title=Task+B"
+      _ <- postForm (prefix <> "/todos") "title=Task+C"
+      respDupAdd <- postForm (prefix <> "/todos") "title=Task+C"
       assertStatus 200 respDupAdd
       assertBodyContains "duplicate-flash" respDupAdd
 
       -- Live search is client-side (scittle); the server no longer filters by title.
       -- Get all IDs from the public HTML representation and toggle first two.
-      respAll <- Test.get "/todos/list"
+      respAll <- Test.get (prefix <> "/todos/list")
       allIds <- liftIO $ requireTodoIds "three created todos" 3 respAll
       case allIds of
         (a:b:_) -> do
           let bText = show b :: Text
           let bStr = encodeUtf8 bText
-          respDupUpdate <- putForm ("/todos/" <> bStr) "edit-title=Task+A"
+          respDupUpdate <- putForm (prefix <> "/todos/" <> bStr) "edit-title=Task+A"
           assertStatus 200 respDupUpdate
           assertBodyContains "Task A" respDupUpdate
           assertBodyContains "Task C" respDupUpdate
@@ -273,31 +296,31 @@ testRoute = withResource acquirePool releasePool \getPool ->
           assertBodyContains (fromStrict $ encodeUtf8 (".querySelector('#todo-" <> bText <> " .edit')?.focus()" :: Text)) respDupUpdate
 
           let aStr = encodeUtf8 (show a :: Text)
-          _ <- patchForm ("/todos/" <> aStr) ""
-          _ <- patchForm ("/todos/" <> bStr) ""
+          _ <- patchForm (prefix <> "/todos/" <> aStr) ""
+          _ <- patchForm (prefix <> "/todos/" <> bStr) ""
           pass
         _ -> liftIO $ assertFailure "Expected at least 2 todos"
 
       -- Filtering (search + all/active/completed) is client-side (scittle);
       -- the server always renders every todo.
-      respUnfiltered <- Test.get "/todos/list"
+      respUnfiltered <- Test.get (prefix <> "/todos/list")
       assertStatus 200 respUnfiltered
       assertBodyContains "Task A" respUnfiltered
       assertBodyContains "Task B" respUnfiltered
       assertBodyContains "Task C" respUnfiltered
 
       -- Clear completed
-      respClear <- postForm "/todos/clear" ""
+      respClear <- postForm (prefix <> "/todos/clear") ""
       assertStatus 200 respClear
 
       -- Verify only the incomplete item remains through the public route.
-      respRemaining <- Test.get "/todos/list"
+      respRemaining <- Test.get (prefix <> "/todos/list")
       assertStatus 200 respRemaining
       assertBodyContains "Task C" respRemaining
       assertBodyDoesNotContain "Task A" respRemaining
       assertBodyDoesNotContain "Task B" respRemaining
-  , testWai (appWithPool getPool) "GET /todo-filter.cljs serves the client filter" do
-      resp <- Test.get "/todo-filter.cljs"
+  , testWai (mkApp getPool) "GET /todo/todo_filter.cljs serves the client filter" do
+      resp <- Test.get "/todo/todo_filter.cljs"
       assertStatus 200 resp
       -- Served from the compiled-in copy (wai-app-static, eMimeType), so the
       -- response must carry that content type and must not be cacheable: the
@@ -317,11 +340,6 @@ appWithPool :: IO Pool -> Application
 appWithPool getPool req respond = do
   pool <- getPool
   app pool req respond
-
-appWithPoolAndGenerator :: IO Pool -> GenerateTodoTitles -> Request -> (Response -> IO ResponseReceived) -> IO ResponseReceived
-appWithPoolAndGenerator getPool generate req respond = do
-  pool <- getPool
-  appWithTodoGenerator generate pool req respond
 
 formHtmlHeaders :: RequestHeaders
 formHtmlHeaders =
