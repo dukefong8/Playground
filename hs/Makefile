@@ -32,8 +32,8 @@ env:
 		base relude containers stm-containers text vector template-haskell \
 		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
 		hasql hasql-dynamic-statements hasql-pool hasql-postgresql-types pqi-native postgresql-types \
-		http-api-data http-media http-types ihp-hsx ihp-router ihp-typed-sql lucid2 \ 
-	  servant servant-server wai wai-app-static wai-extra warp \
+		http-api-data http-media http-types ihp-hsx ihp-router ihp-typed-sql lucid2 \
+		servant servant-server wai wai-app-static wai-extra warp \
 		bluefin co-log co-log-core fast-logger ki mtl io-classes io-sim \
 		breakpoint ghc-stack-profiler nothunks rapid grace \
 		tasty tasty-hunit tasty-html tasty-silver tasty-wai
