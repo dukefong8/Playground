@@ -9,6 +9,7 @@ module Service.Logger
   , logInfo
   , logError
   , closeLogger
+  , silenceLogger
   ) where
 
 import Colog.Core.Action (LogAction (..), cmap)
@@ -24,6 +25,17 @@ fastLogger :: (FastLogger, IO ())
 fastLogger = unsafePerformIO $ newFastLogger (LogStdout defaultBufSize)
 {-# NOINLINE fastLogger #-}
 
+-- | Where log lines go: the stdout fast-logger in production, nothing under
+-- test. One per process — the same shape as 'Service.Grace.installed'.
+installed :: IORef (LogStr -> IO ())
+installed = unsafePerformIO (newIORef (fst fastLogger))
+{-# NOINLINE installed #-}
+
+-- | Drop all log lines. Tests call this before exercising routes so captured
+-- test output stays results only; the server never calls it.
+silenceLogger :: IO ()
+silenceLogger = writeIORef installed (const (pure ()))
+
 loggerAction :: MonadIO m => FastLogger -> LogAction m LogStr
 loggerAction logger' = LogAction $ \logStr -> liftIO $ logger' logStr
 
@@ -31,7 +43,9 @@ fmtLogStr :: Colog.Message -> LogStr
 fmtLogStr = toLogStr . (<> "\n") . Colog.fmtMessage
 
 runLogger :: MonadIO m => LoggerT Colog.Message m a -> m a
-runLogger = usingLoggerT $ cmap fmtLogStr (loggerAction (fst fastLogger))
+runLogger action = do
+  sink <- liftIO (readIORef installed)
+  usingLoggerT (cmap fmtLogStr (loggerAction sink)) action
 
 closeLogger :: IO ()
 closeLogger = snd fastLogger

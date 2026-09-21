@@ -30,6 +30,7 @@ import Test.Tasty.Wai hiding (Session, head)
 import Test.Tasty.Wai qualified as Test
 
 import Service.Grace qualified as Grace
+import Service.Logger qualified as Logger
 import Todo.Db
 import Todo.Route (ihpApp)
 import Todo.Servant (servantApp)
@@ -38,6 +39,7 @@ import Todo.Type
 import IHP.TypedSql.Hasql (sqlExecTypedSession, typedSql)
 tasty :: TestTree -> IO ()
 tasty action = do
+  Logger.silenceLogger
   old <- readGhcid
   (output, _ok) <- capture (runTree tests)
   putStr output

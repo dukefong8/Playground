@@ -22,6 +22,7 @@
             [jolt.partial-cps-fibers-test]
             [jolt.superv-cps-test]
             [jolt.partial-cps-runtime-test]
+            [jolt.taoensso-test]
             [babashka.pod-test]
             [jolt.add-deps]
             [guardrails.bootstrap-test]
@@ -57,6 +58,7 @@
                  jolt.partial-cps-fibers-test
                  jolt.superv-cps-test
                  jolt.partial-cps-runtime-test
+                 jolt.taoensso-test
                  taoensso.truss-tests]
          guardrails '[com.fulcrologic.guardrails.config-spec
                       com.fulcrologic.guardrails.core-spec

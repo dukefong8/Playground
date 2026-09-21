@@ -74,7 +74,18 @@
   ;; Cached namespaces can retain code compiled under different settings, so
   ;; both runs compile from source: Guardrails decides whether to emit
   ;; validation code during macro expansion.
-  ;; test runs JIT with Guardrails enabled; bench builds --opt with Guardrails
-  ;; disabled (GUARDRAILS_ENABLED defaults to false, set explicitly here).
-  :tasks {test "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"
+  ;; test runs JIT with Guardrails enabled; opt and bench build --opt with
+  ;; Guardrails disabled (GUARDRAILS_ENABLED defaults to false, set explicitly
+  ;; here). bench is otherwise unrelated to opt: it profiles the core.async
+  ;; backends with tufte and is observational — see jolt.bench-runner.
+  :tasks {test  "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"
+          opt   "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.opt-runner -o target/release/jlt-opt --opt && ./target/release/jlt-opt"
+          ;; Thread-vs-fiber async benchmarking (tufte). Builds --opt, then runs
+          ;; the binary — which takes the four numbers directly ([n k reps loops],
+          ;; defaults 200 50 5 10) and --b-only for the microbenchmark layer alone.
+          ;; Jolt's :tasks do NOT forward extra CLI args, so `./jolt bench 100 50 3`
+          ;; silently runs the defaults; build once, then invoke the binary for
+          ;; other sizes:
+          ;;   ./target/release/jlt-bench 100 50 3 5
+          ;;   ./target/release/jlt-bench --b-only
           bench "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt && ./target/release/jlt-bench"}}

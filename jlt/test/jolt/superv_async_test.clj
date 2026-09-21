@@ -140,14 +140,19 @@
   (testing "loop bindings recur and the final value is delivered"
     (is (= 10 (<!! (S/go-loop-try- [i 0 acc 0]
                       (if (< i 5) (recur (inc i) (+ acc i)) acc))))))
-  (testing "the expansion carries the S symbol, not the live supervisor value"
-    ;; go-loop-try- takes no supervisor argument; it must splice the symbol
-    ;; so the reference resolves at runtime. Splicing the var's value embeds
-    ;; a TrackingSupervisor (channels, atoms) in the form, which the JVM
-    ;; tolerates as a constant but Jolt cannot compile into code.
-    (let [[op s _] (macroexpand-1 '(superv.async/go-loop-try- [i 0] i))]
-      (is (= 'superv.async/go-try- op))
-      (is (= 'superv.async/S s)))))
+  (testing "the expansion splices no supervisor into go-try-"
+    ;; go-loop-try- is one of the "-" twins, which are the *unsupervised*
+    ;; entry points: go-try- takes no supervisor argument. superv.async #32
+    ;; (5929e31) removed a `~S` that had been splicing the VALUE of
+    ;; superv.async/S into go-try-'s body — embedding a live
+    ;; TrackingSupervisor (channels, atoms) in the form, which the JVM
+    ;; tolerates as a constant but Jolt cannot compile into code. Asserting
+    ;; the arity rather than an exact expansion keeps this independent of how
+    ;; the symbols get qualified.
+    (let [expansion (macroexpand-1 '(superv.async/go-loop-try- [i 0] i))]
+      (is (= 'superv.async/go-try- (first expansion)))
+      (is (= 2 (count expansion))
+          "go-try- receives the loop alone; nothing is spliced in"))))
 
 (deftest reduce<?--reduces-with-plain-and-go-functions
   ;; reduce<?- returns a channel (it is go-try- around a blocking loop), so both
