@@ -16,7 +16,7 @@
          :exclusions [cheshire/cheshire]}
 
         org.clojure/data.json
-        {:mvn/version "2.5.0"}
+        {:mvn/version "2.5.2"}
 
         jolt-lang/transit-jolt
         {:git/url "https://github.com/jolt-lang/transit-jolt"
@@ -35,7 +35,7 @@
         ;; NOTE: the `aot` branch comments this dep out (with fulcro-spec
         ;; below): guardrails sources break Jolt's --opt DCE reader.
         com.fulcrologic/guardrails
-        {:mvn/version "1.3.3"}
+        {:mvn/version "1.3.4"}
 
         com.taoensso/truss
         {:mvn/version "2.5.1"}
@@ -64,13 +64,17 @@
                                 "../../partial-cps/test"]
                    ;; NOTE: the `aot` branch comments this out too (fulcro-spec
                    ;; core pulls guardrails back in).
-                   :extra-deps {fulcrologic/fulcro-spec
-                                {:mvn/version "3.2.9"
-                                 ;; fulcro-spec is test-only and otherwise brings
-                                 ;; an older Guardrails and Malli copy.
-                                 :exclusions [com.fulcrologic/guardrails metosin/malli]}}
+                    :extra-deps {fulcrologic/fulcro-spec
+                                 {:mvn/version "3.2.10"
+                                  ;; fulcro-spec is test-only and otherwise brings
+                                  ;; an older Guardrails and Malli copy.
+                                  :exclusions [com.fulcrologic/guardrails metosin/malli]}}
                    :main-opts ["-m" "jolt.test-runner"]}}
 
- ;; Cached namespaces can retain code compiled under different settings, so the
- ;; optimized build compiles from source on each run.
- :tasks {test "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.test-runner -o target/release/jlt --opt && ./target/release/jlt"}}
+  ;; Cached namespaces can retain code compiled under different settings, so
+  ;; both runs compile from source: Guardrails decides whether to emit
+  ;; validation code during macro expansion.
+  ;; test runs JIT with Guardrails enabled; bench builds --opt with Guardrails
+  ;; disabled (GUARDRAILS_ENABLED defaults to false, set explicitly here).
+  :tasks {test "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"
+          bench "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt && ./target/release/jlt-bench"}}

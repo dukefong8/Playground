@@ -7,12 +7,14 @@
   assertions/triple->assertion)
 
 (defn enabled?
-  "Whether Guardrails was explicitly enabled for this process."
+  "Whether Guardrails was explicitly enabled for this process.
+   Defaults to false: only a GUARDRAILS_ENABLED value other than unset,
+   empty, or \"false\" enables it."
   []
   (let [value (System/getenv "GUARDRAILS_ENABLED")]
-    (and value
-         (not= "" value)
-         (not= "false" value))))
+    (boolean (and value
+                  (not= "" value)
+                  (not= "false" value)))))
 
 (defn- symbolic-throwable [form]
   (if (= Throwable form)
@@ -26,10 +28,10 @@
       (walk/postwalk symbolic-throwable
                      (fulcro-triple->assertion cljs? triple)))))
 
-;; Match Guardrails' upstream JVM test invocation.
+;; Match Guardrails' upstream JVM test invocation. Guardrails is off by
+;; default: any GUARDRAILS_ENABLED value other than unset, empty, or "false"
+;; opts in, and every other value leaves the property cleared.
 (System/setProperty "guardrails.config" "guardrails-test.edn")
-(let [enabled (System/getenv "GUARDRAILS_ENABLED")]
-  (if (or (= "" enabled) (= "false" enabled))
-    (System/clearProperty "guardrails.enabled")
-    (when enabled
-      (System/setProperty "guardrails.enabled" enabled))))
+(if (enabled?)
+  (System/setProperty "guardrails.enabled" (System/getenv "GUARDRAILS_ENABLED"))
+  (System/clearProperty "guardrails.enabled"))

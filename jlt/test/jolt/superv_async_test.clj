@@ -136,6 +136,19 @@
 
 ;; -------------------------------------------------------------- dataflow
 
+(deftest go-loop-try--loops-unsupervised
+  (testing "loop bindings recur and the final value is delivered"
+    (is (= 10 (<!! (S/go-loop-try- [i 0 acc 0]
+                      (if (< i 5) (recur (inc i) (+ acc i)) acc))))))
+  (testing "the expansion carries the S symbol, not the live supervisor value"
+    ;; go-loop-try- takes no supervisor argument; it must splice the symbol
+    ;; so the reference resolves at runtime. Splicing the var's value embeds
+    ;; a TrackingSupervisor (channels, atoms) in the form, which the JVM
+    ;; tolerates as a constant but Jolt cannot compile into code.
+    (let [[op s _] (macroexpand-1 '(superv.async/go-loop-try- [i 0] i))]
+      (is (= 'superv.async/go-try- op))
+      (is (= 'superv.async/S s)))))
+
 (deftest reduce<?--reduces-with-plain-and-go-functions
   ;; reduce<?- returns a channel (it is go-try- around a blocking loop), so both
   ;; cases have to be read out of it.
