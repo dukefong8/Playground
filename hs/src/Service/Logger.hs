@@ -9,7 +9,7 @@ module Service.Logger
   , logInfo
   , logError
   , closeLogger
-  , silenceLogger
+  , nullLogger
   ) where
 
 import Colog.Core.Action (LogAction (..), cmap)
@@ -33,8 +33,8 @@ installed = unsafePerformIO (newIORef (fst fastLogger))
 
 -- | Drop all log lines. Tests call this before exercising routes so captured
 -- test output stays results only; the server never calls it.
-silenceLogger :: IO ()
-silenceLogger = writeIORef installed (const (pure ()))
+nullLogger :: IO ()
+nullLogger = writeIORef installed (const (pure ()))
 
 loggerAction :: MonadIO m => FastLogger -> LogAction m LogStr
 loggerAction logger' = LogAction $ \logStr -> liftIO $ logger' logStr

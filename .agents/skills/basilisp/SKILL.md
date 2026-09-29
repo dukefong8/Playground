@@ -20,7 +20,7 @@ Clojure-shaped syntax on the Python VM: imports, packaging, host interop, async,
    Completion criterion: callable shape, argument names, and return type are confirmed in the live process — not inferred from docs or source.
 
 3. Evaluate only through `brepl`.
-   Load and follow `$brepl` before any `brepl` use. Use quoted heredocs:
+   Send every form as a quoted heredoc — positional args and `-e` also work, but the heredoc keeps shell quoting away from Clojure reader syntax, which uses both quote characters and reader macros:
 
    ```bash
    brepl <<'EOF'

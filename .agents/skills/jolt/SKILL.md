@@ -110,6 +110,7 @@ Fix the missing seam or expose the blocker with the exact failing test.
 
 ## REPL discipline
 
-Load `.agents/skills/brepl/SKILL.md` before using `brepl`. Always send forms with
-a quoted heredoc. Use the running Jolt nREPL for Jolt bindings and runtime
-behavior, and the running Clojure nREPL only as the JVM semantic oracle.
+Send every form to `brepl` as a quoted heredoc — never a bare positional arg —
+so shell quoting cannot mangle Clojure reader syntax. Use the running Jolt nREPL
+for Jolt bindings and runtime behavior, and the running Clojure nREPL only as the
+JVM semantic oracle.

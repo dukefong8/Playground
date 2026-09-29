@@ -42,7 +42,30 @@ nrepl {:doc "Start a bb nREPL server: bb nrepl [port] (default 7888)"
 
 **Check what you actually connected to.** Make `(System/getProperty "user.dir")` your first form: connecting to a port someone else owns is easy, and the failure is silent — every probe then reports that project's directory and you draw conclusions about the wrong codebase. A project running a *browser* scittle nREPL (`sci.nrepl.browser-server`, see below) and a plain bb nREPL at once will have two ports, and picking the wrong one is how `js/…` and `fs/…` both end up unresolved.
 
-One more trap: a server started **before** you changed `:paths` will not see the new module — the classpath is fixed at startup, and the symptom (`Unable to resolve symbol`) reads like a broken module rather than a stale server. Restart it.
+One more trap: a server started **before** you changed `:paths` will not see the new module — the classpath is fixed at startup, and the symptom (`Unable to resolve symbol`) reads like a broken module rather than a stale server. Restart it. The same holds for an alias that adds a path (`-M:repl:test-private`): a namespace the alias would have supplied does not exist to a server that launched without it, and `require` cannot find what the server does not have.
+
+**Which client.** `bb repl --connect` is a pipe; `clojure -M:attach <port>` is a terminal. Both are pure clients — they evaluate server-side, clone their own session, and render nothing in another client's scrollback — so against a JVM server the reach is identical and only the driver differs.
+
+| Reach for `bb repl --connect` | Reach for `clojure -M:attach` |
+|---|---|
+| No TTY: an agent, a script, CI | A human at a keyboard |
+| Batching forms and reading values back | Exploring: try a form, react, try the next |
+| Repeated eval — bb starts in milliseconds, attach pays JVM startup every call | Line editing, history, highlighting, the prompt's timing and heap readout |
+| Output you will pipe through `jq` or `grep` | Output you will read |
+| The target is not a JVM (browser scittle nREPL, below) | You want the user's own client config and conventions |
+
+`clojure -M:attach` takes piped stdin too, so it is scriptable — but you pay the JVM and get ANSI decoration to strip, so batch work rarely justifies it.
+
+**`brepl` is a third client**, worth knowing when the other two are awkward. It is a standalone binary (lichtstein/brepl) that evaluates what it is given with no connect step: a positional arg, `-e <expr>`, or a quoted heredoc on stdin — the same stdin discipline as above. Two capabilities the others lack:
+
+- **Port discovery.** `-p <port>`, else `.nrepl-port`, else `BREPL_PORT`, else a scan for a running Clojure/bb nREPL rooted at the current directory. `bb repl --connect` needs the port up front; this one finds it.
+- **`brepl balance <file> [--dry-run]`** repairs unbalanced brackets and parens — the recovery move for a file too broken to load into the REPL at all.
+
+`brepl -f <file>` loads a whole file, resolving the port by searching upward from *the file's* directory rather than the cwd — the right behavior when the file lives in a different project than the one you are standing in.
+
+**Session state does not survive between `bb repl --connect` invocations.** Every call clones a fresh session, so `in-ns`, dynamic `binding`, and `*1`/`*e` are gone by the next call. JVM-global state is not: loaded namespaces, `def`s, and namespace aliases persist, which is why a second heredoc finds a namespace already loaded and its `require` a no-op. For continuity, send everything in one heredoc or stay in one attach session.
+
+**No client's output appears in another client's scrollback.** When a human is watching a separate terminal and needs to *see* the work, evaluating against that terminal's server puts nothing on its screen — typing into it is a different channel.
 
 If you genuinely cannot get a REPL, say so and keep going — but treat every API assumption as unverified, and prefer code whose correctness you can check by running the task end-to-end.
 
@@ -199,7 +222,7 @@ Put the module in the project's **existing** source root. `scripts/` is the conv
  {:init (do
           (require '[babashka.fs :as fs]
                    '[clojure.string :as str]
-                   '[examples-registry :as reg])
+                   '[my-registry :as reg])
           (def kondo-dep "{:deps {clj-kondo/clj-kondo {:mvn/version \"2025.02.20\"}}}")
           (defn kondo-argv []
             (if (fs/which "clj-kondo")
@@ -274,14 +297,14 @@ my-task {:task (my/start! (cli/parse-opts *command-line-args*
                                          {:coerce {:port :int} :alias {:p :port}}))}
 
 ;; The wrapped tool owns the CLI: forward verbatim
-record {:task (let [{:keys [exit]} (apply shell {:continue true}
-                                           "screen-grab" "record"
-                                           "--manifest" "scripts/demo_manifest.edn"
+render {:task (let [{:keys [exit]} (apply shell {:continue true}
+                                           "my-tool" "render"
+                                           "--manifest" "scripts/manifest.edn"
                                            *command-line-args*)]
                  (System/exit exit))}
 ```
 
-Forwarding beats re-declaring a tool's flags: the wrapped tool's own `--help` stays true and you stop maintaining a parallel copy of its option list. Pass configuration to a subprocess through the environment rather than argv when it is an implementation detail: `(shell {:extra-env {"RAYLIB_APP_AUTO_QUIT_MS" ms}} ...)`.
+Forwarding beats re-declaring a tool's flags: the wrapped tool's own `--help` stays true and you stop maintaining a parallel copy of its option list. Pass configuration to a subprocess through the environment rather than argv when it is an implementation detail: `(shell {:extra-env {"MY_TOOL_TIMEOUT_MS" ms}} ...)`.
 
 Three details decide whether forwarding actually works:
 
@@ -318,7 +341,7 @@ When a task produces a report, a diff or a large result, also write it to a file
 ### Resolving external commands
 
 ```clojure
-(def jolt-cmd (if (fs/which "jolt") "jolt" "joltc"))
+(def tool-cmd (if (fs/which "mytool") "mytool" "mytool-legacy"))
 
 (defn kondo-argv []
   (if (fs/which "clj-kondo")
@@ -333,10 +356,10 @@ Two failures this prevents. Tools get renamed, and a machine that has used the t
 When neither route exists, refuse with the reason and the fix rather than a stack trace:
 
 ```clojure
-(when-not (fs/which "screen-grab")
+(when-not (fs/which "my-tool")
   (binding [*out* *err*]
-    (println "bb record needs the `screen-grab` capture CLI on your PATH.")
-    (println "You don't need it to view the demos: every GIF is committed under docs/demos/."))
+    (println "bb render needs the `my-tool` CLI on your PATH.")
+    (println "You don't need it to view the output: every artifact is committed under docs/."))
   (System/exit 1))
 ```
 
@@ -349,7 +372,7 @@ So write a separate gate that reads the registration points as data and compares
 ```clojure
 check:registration
 {:doc "Source, deps.edn alias, check require and bb.edn task all agree"
- :task (let [probs (regi/problems root reg/examples)]
+ :task (let [probs (reg/problems root reg/examples)]
          (if (seq probs)
            (do (binding [*out* *err*]
                  (doseq [[n what] probs] (println (str "  " n ": " what))))
@@ -359,13 +382,13 @@ check:registration
 
 Rules that make gates survive contact:
 
-- **Derive every expected value** from a source of truth or from the files themselves, never from a literal. A gate holding a hardcoded `171` becomes a second thing to update, and then a thing to distrust.
-- **Put the mapping in one place.** In the raylib-jlt suite, `deps.edn` is the source of truth for which namespace a row means — the alias is not the display name and the namespace is derivable from neither — so everything else is checked *against* it rather than against string surgery.
+- **Derive every expected value** from a source of truth or from the files themselves, never from a literal. A gate holding a hardcoded count becomes a second thing to update, and then a thing to distrust.
+- **Put the mapping in one place.** When a row in a table maps to a file that has to be found, neither the row's label nor the file's name is derivable from the other — so make one file the source of truth (a `deps.edn` alias, a registry, a manifest) and check everything else *against* it rather than against string surgery.
 - **Check the binding, not just the membership.** Membership is the easy half. A task listed as `gamma` whose body actually calls `beta/run!` passes every presence check while being exactly the bug you set out to catch — a thing that silently never runs. Compare what each entry *points at*.
 - **A hand-maintained exemption list is a regression.** If the gate needs `:ignore #{"init" "requires" "check" …}` to stop reporting false positives, it has reintroduced the same class of forgetting it was built to catch. Tighten what counts as an entry instead of listing what doesn't.
 - **`.gitignore` whatever the gate writes.** A checker that leaves a cache or report in the tree makes people distrust it. Same change, same commit.
 
-Prose that states a count is a gate waiting to be written: a doc once claimed "All 151 recordings are here" while the suite had grown to 171. If a number matters, derive it or gate it.
+Prose that states a count is a gate waiting to be written: a doc once claimed "All 151 items are here" while the suite had grown to 171. If a number matters, derive it or gate it.
 
 ### Give the tool a project-local config dir
 
@@ -411,7 +434,7 @@ Pick a small set of markers and reuse them: `▶` for what is starting, `✓`/`�
 
 ### Comments carry the why
 
-The comment worth writing says what the code cannot: that `jolt` replaced `joltc` in 0.5.0 and the fallback exists because CI failed with *Cannot run program "joltc"*; that only one formatter may own formatting because cljfmt and clojure-lsp disagree on compact literal tables; that a gate exists because a check passed on a broken tree. Include the date when you measured something, and the symptom you saw. This is what separates a task file a colleague can safely change from one they can only cargo-cult.
+The comment worth writing says what the code cannot: that a tool was renamed in 0.5.0 and the fallback exists because CI failed with *Cannot run program "oldname"*; that only one formatter may own formatting because two formatters disagree on compact literal tables; that a gate exists because a check passed on a broken tree. Include the date when you measured something, and the symptom you saw. This is what separates a task file a colleague can safely change from one they can only cargo-cult.
 
 ## Script dependencies
 
@@ -471,6 +494,9 @@ See [references/scittle-nrepl.md](references/scittle-nrepl.md) for the page snip
 | Assuming `**` and `*` are the same in globs | `**` is recursive, `*` is one level |
 | `**/*.ext` expecting root-level matches | `**/*.ext` skips root; use `**.ext` |
 | Expecting `fs/glob` to see dotfiles | It skips them by default; `{:hidden true}`, and `fs/list-dir` disagrees |
+| Expecting session state to survive between `bb repl --connect` calls | Each call clones a fresh session: namespaces, vars and aliases persist, `in-ns`/`binding`/`*1` do not |
+| Reaching for `clojure -M:attach` to batch forms | `bb repl --connect` starts in ms and pipes clean output; attach pays a JVM and ANSI to strip |
+| Assuming a form sent to a terminal's nREPL server shows up on that terminal | Responses route to the requesting connection; typing into the terminal is a separate channel |
 
 ## Source material
 

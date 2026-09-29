@@ -48,7 +48,7 @@ PROMPT="Fix GHC errors with the smallest correct edit; read ghcid.txt until All 
 # whose bounds check had been deleted, codex then "restored" checkedInt64 *without*
 # its range guards. That compiles, and nothing in the test suite covers it — only
 # the byte-identical check caught it. Cheap reasoning is a false economy here.
-FLAGS=(--disable plugins --disable hooks -m gpt-5.6-luna)
+FLAGS=(--disable plugins --disable hooks -m gpt-6-luna)
 
 # Status goes on the status line, and nothing is typed into any pane: the
 # ghciwatch pane is a TUI, so text arriving there is read as keystrokes and could
