@@ -19,12 +19,12 @@ import Network.Wai
 import Network.Wai.Application.Static (defaultWebAppSettings, staticApp)
 import Network.Wai.Test qualified as WaiTest
 import Service.Hasql
+import System.IO.Silently (capture)
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.Ingredients (composeReporters, tryIngredients)
 import Test.Tasty.Ingredients.ConsoleReporter (consoleTestReporter)
 import Test.Tasty.Options (OptionSet)
-import System.IO.Silently (capture)
 import Test.Tasty.Runners.Html (HtmlPath (HtmlPath), htmlRunner)
 import Test.Tasty.Wai hiding (Session, head)
 import Test.Tasty.Wai qualified as Test
@@ -39,24 +39,24 @@ import Todo.Type
 import IHP.TypedSql.Hasql (sqlExecTypedSession, typedSql)
 tasty :: TestTree -> IO ()
 tasty action = do
-  Logger.silenceLogger
+  Logger.nullLogger
   old <- readGhcid
   (output, _ok) <- capture (runTree tests)
   putStr output
-  TIO.writeFile "ghcid.txt" (toText output <> old)
+  writeFileText "ghcid.txt" (toText output <> old)
   where
     tests = localOption (Just (HtmlPath "tasty.html")) action
     ingredients =
       htmlRunner `composeReporters` consoleTestReporter : defaultIngredients
     runTree t =
       case tryIngredients ingredients (mempty :: OptionSet) t of
-        Nothing -> pure False
+        Nothing       -> pure False
         Just runTests -> runTests
     readGhcid :: IO Text
     readGhcid = do
       content <- try (TIO.readFile "ghcid.txt") :: IO (Either SomeException Text)
       case content of
-        Left _ -> pure ""
+        Left _     -> pure ""
         Right text -> evaluate (T.length text) >> pure text
 
 -- $> tasty testDB
