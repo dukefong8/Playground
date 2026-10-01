@@ -27,8 +27,9 @@ exe:
 
 env:
 	rm .ghc.environment.*$(GHC)* || true
-	cabal install -w ghc-$(GHC) --allow-newer --enable-documentation \
+	cabal install -w ghc-$(GHC) --enable-documentation \
 		--package-env . --lib \
+		--allow-newer --constraint='hasql<2' \
 		base relude containers stm-containers text vector template-haskell \
 		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
 		hasql hasql-pool pqi-native ihp-typed-sql hasql-postgresql-types postgresql-types \
