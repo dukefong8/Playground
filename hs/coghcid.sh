@@ -7,8 +7,8 @@
 set -euo pipefail
 
 GHCID=${GHCID:-ghcid.txt}
-LOG=$PWD/.coghcid.log # stdout+stderr of the codex run; outside WORK so it
-# survives the trap
+LOG=$PWD/.coghcid.log # stdout+stderr of the codex run; outside WORK so the trap
+# cannot remove it
 WORK=$PWD/.coghcid # lock dir, removed on exit
 
 # Where to report: the pane this runs in, which is the ghciwatch pane — ghciwatch
@@ -22,8 +22,8 @@ if [[ ! -f $GHCID ]] || grep -q 'All good' "$GHCID"; then
 fi
 
 # Take a lock: codex edits source -> reload -> this hook runs again, so without one
-# every edit would spawn another codex. mkdir is atomic and portable — macOS ships
-# no flock(1).
+# every edit would spawn another codex. mkdir is atomic and portable — macOS ships no
+# flock(1).
 if ! mkdir "$WORK" 2>/dev/null; then
   owner=$(cat "$WORK/pid" 2>/dev/null || true)
   # `kill -0` first: it is the portable probe. BusyBox ps has no -p, so there it
@@ -33,12 +33,19 @@ if ! mkdir "$WORK" 2>/dev/null; then
     echo "coghcid: codex already running (pid $owner), skipping" >&2
     exit 0
   fi
-  # Stale lock from a killed run: claim it in place.
+  # Stale lock from a killed run. Steal it with `mv`, which only one process can win —
+  # claiming it in place would let two hooks that both read the same dead pid fall through
+  # together and start two codexes, and the loser's exit trap would then delete the winner's
+  # lock, admitting a third. `async:` hooks are never serialised by ghciwatch, so the
+  # overlap this guards against is real.
+  mv -- "$WORK" "$WORK.stale.$$" 2>/dev/null || exit 0
+  rm -rf -- "$WORK.stale.$$"
+  mkdir "$WORK" 2>/dev/null || exit 0
 fi
 trap 'rm -rf -- "${WORK:?}"' EXIT
 echo $$ >"$WORK/pid"
 
-PROMPT="Fix GHC errors with the smallest correct edit; read ghcid.txt until All good. No sleep poll; No cabal/stack/make. Try hole _ where a type is unknown and let the reload report what GHC expects. End with exactly one line: 'FIXED: <fix>' or 'STOPPED: <why>'."
+PROMPT="Fix GHC errors with minimal correct edits; read ghcid.txt until it outputs 'All good'. Choose the fix from 'Valid hole fits' first, then try other fixes as needed. CRITICAL DIRECTIVE: once two consecutive edit commands leave errors on the exact same line number, do not run any further tools or commands. End with exactly one line: 'FIXED: <one-line summary of what you changed>' on success, or 'STOPPED: <reason>' if you stopped early."
 
 # --disable plugins/hooks drops the harness: ~10k of the ~23k input tokens, none of
 # it useful for a compile error.
@@ -53,20 +60,22 @@ FLAGS=(--disable plugins --disable hooks -m gpt-6-luna)
 # Status goes on the status line, and nothing is typed into any pane: the
 # ghciwatch pane is a TUI, so text arriving there is read as keystrokes and could
 # act on the live build. This is display only.
-report() {
+report() { # $1 = lifetime in ms, $2 = message, $3 = overlay colour, $4 = "clear" to retire after $1
   [[ -n $TARGET ]] || return 0
-  # Right-align the message so it doesn't sit at column 0 over the window list, and
-  # yellow so it stands out. Set here rather than in message-style, which would
-  # restyle every message including the command prompt.
-  tmux display-message -t "$TARGET" -d "$1" "#[align=right,fg=yellow]$2" 2>/dev/null || true
-  # Same text again, this time where it lasts: status-right interpolates
-  # #{@ghcid_status}, which the overlay above cannot do — that one dies on the next
-  # key press. -w keeps it to the window the hook ran in.
+  # Overlay: right-aligned and coloured; -C keeps the pane redrawing, and no -N so
+  # keys still work (a key just clears it).
+  tmux display-message -C -t "$TARGET" -d "$1" "#[align=right,fg=${3:-white}]$2" 2>/dev/null || true
+  # Persistent copy in status-right, which a key press cannot dismiss.
   tmux set-option -w -t "$TARGET" @ghcid_status "$2" 2>/dev/null || true
+  # Only the final report retires it: the "working" line is meant to be replaced by
+  # the summary, so a timer armed for it would just clear that summary early.
+  [[ -n ${4:-} ]] || return 0
+  tmux run-shell -b -d "$(($1 / 1000))" -t "$TARGET" -C \
+    "set-option -w -t $TARGET -u @ghcid_status" 2>/dev/null || true
 }
-# Show "working" the moment codex starts, and let the result below replace it. The
-# delay is finite so a run that dies without reporting doesn't leave it up.
-report 300000 'coghcid: fixing the build error...'
+# Show "working" the moment codex starts; the result below replaces it. This call arms
+# no timer, so a run that dies leaves the line up until the next report.
+report 30000 'coghcid: fixing the build error...'
 
 # --ephemeral leaves no session file, so there is no thread to pin and no earlier
 # conversation to re-read. The errors and the prompt ride in together on stdin,
@@ -79,7 +88,7 @@ report 300000 'coghcid: fixing the build error...'
 # fromjson?: given a mixed stream, plain jq aborts on the first stderr line and
 # prints nothing at all, which would leave the raw JSONL as the status line.
 rc=0
-out=$(printf '%s\n\n%s\n' "$(<ghcid.txt)" "$PROMPT" | codex exec "${FLAGS[@]}" --json --ephemeral -C "$PWD" -s workspace-write - |& tee "$LOG") || rc=$?
+out=$(printf '%s\n\n%s\n' "$(<"$GHCID")" "$PROMPT" | codex exec "${FLAGS[@]}" --json --ephemeral -C "$PWD" -s workspace-write - |& tee "$LOG") || rc=$?
 
 # Relay one line into the ghciwatch window, which would otherwise show nothing of
 # the run. Prefer codex's own FIXED:/STOPPED: line (the prompt asks for one), then
@@ -92,10 +101,11 @@ summary=$(grep -aoE '^(FIXED|STOPPED):.*' <<<"$final" 2>/dev/null | tail -1 || t
 if [[ -z ${summary:-} ]]; then
   summary=$(grep -av '^[[:space:]]*$' <<<"$final" 2>/dev/null | tail -1 || true)
 fi
+# Cap the length for the status line: codex's last line is not guaranteed short.
+# cut -c counts characters, so it cannot split a multi-byte one.
 # Cap the whole status text, prefix included — capping the summary alone leaves the
 # stored value 9 chars longer than the status line's budget.
 summary=$(printf '%s' "coghcid: ${summary:-codex exited $rc}" | tr -d '\r' | tr '\n' ' ' | cut -c1-160)
-
-report "${COGHCID_STATUS_MS:-60000}" "$summary"
+report "${COGHCID_STATUS_MS:-60000}" "$summary" yellow clear
 
 exit "$rc"

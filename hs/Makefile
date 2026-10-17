@@ -18,7 +18,7 @@ dev:
 		--restart-glob '!dist-newstyle/**' \
 		--restart-glob .ghc.environment.* \
 		--restart-glob Makefile \
-		--restart-glob pighcid.sh \
+		--restart-glob '*ghcid.sh' \
 		--after-reload-shell 'async: ./pighcid.sh'
 
 exe:
@@ -34,9 +34,9 @@ env:
 		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
 		hasql hasql-pool pqi-native ihp-typed-sql hasql-postgresql-types postgresql-types \
 		http-api-data http-media http-types ihp-hsx ihp-router lucid2 \
-		servant servant-server wai wai-app-static wai-extra warp \
-		bluefin co-log co-log-core fast-logger ki mtl io-classes io-sim \
-		breakpoint ghc-stack-profiler nothunks rapid grace \
+		grace servant servant-server wai wai-app-static wai-extra warp \
+		co-log co-log-core fast-logger ki mtl io-classes io-sim \
+		breakpoint ghc-stack-profiler nothunks rapid silently \
 		tasty tasty-hunit tasty-html tasty-silver tasty-wai
 
 pg:

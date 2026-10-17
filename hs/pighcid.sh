@@ -45,26 +45,27 @@ fi
 trap 'rm -rf -- "${WORK:?}"' EXIT
 echo $$ >"$WORK/pid"
 
-PROMPT="Fix GHC errors with minimal correct edits; read ghcid.txt until it outputs 'All good'. Check GHC's 'Valid hole fits' first, and if necessary, use 'Valid refinement hole fits' (use type holes (_) where wrapper expressions containing nested holes) in ghcid.txt to select and apply the appropriate match. Fill a hole from those fits where you can; try restoring the value the previous commit had only as a last resort, since the working tree is deliberately ahead of the last commit. If two consecutive edits result in errors on the exact same line number, ABORT immediately. Never add pragmas or diagnostic splices. Your final response must contain only one line: either 'FIXED: ' or 'STOPPED: '."
+PROMPT="Fix GHC errors with minimal correct edits; read ghcid.txt until it outputs 'All good'. Choose the fix from 'Valid hole fits' first, then try other fixes as needed. CRITICAL DIRECTIVE: once two consecutive edit commands leave errors on the exact same line number, do not run any further tools or commands. End with exactly one line: 'FIXED: <one-line summary of what you changed>' on success, or 'STOPPED: <reason>' if you stopped early."
 
 # Status goes on the status line, and nothing is typed into any pane: the
 # ghciwatch pane is a TUI, so text arriving there is read as keystrokes and could
 # act on the live build. This is display only.
-report() {
+report() { # $1 = lifetime in ms, $2 = message, $3 = overlay colour, $4 = "clear" to retire after $1
   [[ -n $TARGET ]] || return 0
-  # Right-align the message so it doesn't sit at column 0 over the window list, and
-  # colour it by role: white for the transient "working" line, yellow for the
-  # result the caller passes explicitly. Set here rather than in message-style,
-  # which would restyle every message including the command prompt.
-  tmux display-message -t "$TARGET" -d "$1" "#[align=right,fg=${3:-white}]$2" 2>/dev/null || true
-  # Same text again, this time where it lasts: status-right interpolates
-  # #{@ghcid_status}, which the overlay above cannot do — that one dies on the next
-  # key press. -w keeps it to the window the hook ran in.
+  # Overlay: right-aligned and coloured; -C keeps the pane redrawing, and no -N so
+  # keys still work (a key just clears it).
+  tmux display-message -C -t "$TARGET" -d "$1" "#[align=right,fg=${3:-white}]$2" 2>/dev/null || true
+  # Persistent copy in status-right, which a key press cannot dismiss.
   tmux set-option -w -t "$TARGET" @ghcid_status "$2" 2>/dev/null || true
+  # Only the final report retires it: the "working" line is meant to be replaced by
+  # the summary, so a timer armed for it would just clear that summary early.
+  [[ -n ${4:-} ]] || return 0
+  tmux run-shell -b -d "$(($1 / 1000))" -t "$TARGET" -C \
+    "set-option -w -t $TARGET -u @ghcid_status" 2>/dev/null || true
 }
-# Show "working" the moment pi starts, and let the result below replace it. The
-# delay is finite so a run that dies without reporting doesn't leave it up.
-report 300000 'pighcid: fixing the build error...'
+# Show "working" the moment pi starts; the result below replaces it. This call arms
+# no timer, so a run that dies leaves the line up until the next report.
+report 30000 'pighcid: fixing the build error...'
 
 # The errors and the prompt ride in together on stdin, errors first.
 #
@@ -91,6 +92,6 @@ fi
 # Cap the whole status text, prefix included — capping the summary alone leaves the
 # stored value 9 chars longer than the status line's budget.
 summary=$(printf '%s' "pighcid: ${summary:-pi exited $rc}" | tr -d '\r' | tr '\n' ' ' | cut -c1-160)
-report "${PIGHCID_STATUS_MS:-60000}" "$summary" yellow
+report "${PIGHCID_STATUS_MS:-60000}" "$summary" yellow clear
 
 exit "$rc"

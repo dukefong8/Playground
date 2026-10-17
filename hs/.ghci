@@ -19,6 +19,5 @@
 :set -outputdir .build
 :set -isrc
 
-:set -package silently
 :add Todo.Test
 :add Main
