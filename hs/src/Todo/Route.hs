@@ -17,7 +17,7 @@ import Web.FormUrlEncoded (FromForm)
 
 import Home.Route (notFoundResponse)
 import Htmx.Prelude (Html, viewResponse)
-import IHP.Router.Trie (mergeTrie)
+import IHP.Router.Trie (RouteTrie, mergeTrie)
 import IHP.Router.WAI (HasPath (..), UrlCapture (..), routeTrieMiddleware, routes)
 import Service.Hasql
 import Service.Http
@@ -54,6 +54,8 @@ GET /app/todos/{todoId}/edit      EditTodoAction { todoId = #todoId }
 PUT /app/todos/{todoId}           UpdateTodoAction { todoId = #todoId }
 POST /app/todos/generate          GenerateTodosAction
 |]
+
+todoRouteTrie :: (TodoRoute -> Application) -> RouteTrie
 
 ihpApp :: Pool -> Application
 ihpApp pool =
