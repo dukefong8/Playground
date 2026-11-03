@@ -19,7 +19,7 @@ dev:
 		--restart-glob .ghc.environment.* \
 		--restart-glob Makefile \
 		--restart-glob '*ghcid.sh' \
-		--after-reload-shell 'async: ./pighcid.sh'
+		--after-reload-shell 'async: ./coghcid.sh'
 
 exe:
 	mkdir -p .build && ln -sf .build .hiefiles && ln -sf .build .hifiles
@@ -29,13 +29,13 @@ env:
 	rm .ghc.environment.*$(GHC)* || true
 	cabal install -w ghc-$(GHC) --enable-documentation \
 		--package-env . --lib \
-		--allow-newer --constraint='hasql<2' \
+		--allow-newer \
 		base relude containers stm-containers text vector template-haskell \
 		aeson aeson-optics generic-data optics witch safe-wild-cards strict-wrapper \
 		hasql hasql-pool pqi-native ihp-typed-sql hasql-postgresql-types postgresql-types \
 		http-api-data http-media http-types ihp-hsx ihp-router lucid2 \
 		grace servant servant-server wai wai-app-static wai-extra warp \
-		co-log co-log-core fast-logger ki mtl io-classes io-sim \
+		co-log co-log-core fast-logger fx mtl io-classes io-sim \
 		breakpoint ghc-stack-profiler nothunks rapid silently \
 		tasty tasty-hunit tasty-html tasty-silver tasty-wai
 

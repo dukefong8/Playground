@@ -13,9 +13,9 @@ module Todo.Db
   , updateTodoTitleSession
   ) where
 
-import Service.Hasql
 import IHP.TypedSql.Hasql (sqlExecTypedSession, sqlQueryTypedSession, typedSql)
 import IHP.TypedSql.Id (Id' (..))
+import Service.Hasql
 import Todo.Type
 
 addTodoSession :: Text -> Session ()
