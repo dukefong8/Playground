@@ -9,8 +9,11 @@
 
   Every type's C shape comes from the generated `goose/export_abi.h`; the
   header wraps all types in `#pragma pack(push, 1)`, while jolt.ffi/layout
-  does not model packing. Packed values therefore cross as runs of :uint8
-  with fields at byte offsets, not as natural Jolt layouts.
+  does not model packing. Packed values therefore usually cross as runs of
+  :uint8 with fields at byte offsets, not as natural Jolt layouts — except
+  where register classification depends on member types rather than bytes
+  (see `Mixed` below), in which case the descriptor uses the real field
+  types.
 
   | goose | generated C | Jolt |
   |---|---|---|
@@ -25,8 +28,8 @@
   | `f32` | `gs_f32` (`float`) | `:float` |
   | `f64` | `gs_f64` (`double`) | `:double` |
   | `bool` | `uint8_t` | `:uint8` or `:bool` |
-  | struct `Pair{a:i32,b:i64}` | packed `struct { int32_t a; int64_t b; }`, 12 bytes | 12 :uint8 fields; a at 0, b at 4 |
-  | struct `Mixed{f:f32,g:f64}` | packed 12 bytes | 12 :uint8 fields; f at 0, g at 4 |
+  | struct `Pair{b:i64,a:i32}` | packed `struct { int64_t b; int32_t a; }`, 12 bytes | 12 :uint8 fields; b at 0, a at 8. Field order matters: `{a:i32,b:i64}` packs b at 4, C then passes the struct on the stack while Jolt passes it in registers, so it does not cross (reference §24) |
+  | struct `Mixed{g:f64,f:f32}` | packed 12 bytes | real field types `[:struct [[:g :double] [:f :float]]]`, NOT :uint8 runs: the float member is classified SSE and crosses in XMM registers, while :uint8 runs cross in general-purpose ones. Packed offsets (g at 0, f at 8) agree with Chez's natural offsets here, so the descriptor applies |
   | struct `Grid{cells:i32[4]}` | `struct { struct { int32_t e[4]; } cells; }`, 16 bytes | 16 :uint8 fields, or `[:array :int32 4]` when the alignment agrees |
   | fixed `T[N]` | `struct { T e[N]; }` | `[:by-value [:struct [[:e [:array :int32 N]]]]]` for `i32[N]` |
   | static-capacity `T[..N]` | `struct { uint8_t len; T e[N]; }`; `i32[..4]` is 17 bytes | byte layout: len at 0, elements at 1 + 4i |
@@ -113,7 +116,12 @@
   `(ffi/defcfn ~clj-name ~c-name ~(vec argtypes) ~(packed n)))
 
 (defcfn-packed-in pair-sum "abi_pair_sum" 12 [] :int64)
-(defcfn-packed-in mixed-sum "abi_mixed_sum" 12 [] :double)
+;; Mixed crosses by value only with its real field types (see the table):
+;; a :uint8 run would arrive in general-purpose registers while C reads XMM.
+;; Chez's natural offsets for [double float] agree with the packed ones, so
+;; this descriptor applies despite the size difference.
+(ffi/defcfn mixed-sum "abi_mixed_sum"
+  [[:by-value [:struct [[:g :double] [:f :float]]]]] :double)
 (defcfn-packed-in arr-sum "abi_arr_sum" 16 [] :int64)
 (defcfn-packed-in static-sum "abi_static_sum" 17 [] :int64)
 (defcfn-packed-in grid-sum "abi_grid_sum" 16 [] :int64)
@@ -123,9 +131,10 @@
 (defcfn-packed-out pair-make "abi_pair_make" [:int32 :int64] 12)
 (defcfn-packed-out shape-make "abi_shape_make" [:double :double] 17)
 
-;; The same export with Jolt's natural layout, to prove the mismatch.
-(ffi/defcfn pair-sum-aligned "abi_pair_sum"
-  [[:by-value [:struct [[:a :int32] [:b :int64]]]]] :int64)
+;; Reading a packed Pair back at Jolt's natural offsets must NOT give the
+;; same fields: that is the proof the packed layout is what crosses.
+;; (A natural-layout *argument* cannot serve as the control: addition
+;; commutes, so a swapped struct sums the same.)
 
 (ffi/defcfn color-next "abi_color_next"
   [[:by-value [:struct [[:b0 :uint8]]]]]
@@ -229,16 +238,16 @@
 (def ^:private shape-size 17)
 
 (defn- pair-bytes! [p a b]
-  (ffi/write p :int32 a 0)
-  (ffi/write p :int64 b 4)
+  (ffi/write p :int64 b 0)
+  (ffi/write p :int32 a 8)
   p)
 
 (defn- read-pair [p]
-  [(ffi/read p :int32 0) (ffi/read p :int64 4)])
+  [(ffi/read p :int32 8) (ffi/read p :int64 0)])
 
-(defn- mixed-bytes! [p f g]
-  (ffi/write p :float f 0)
-  (ffi/write p :double g 4)
+(defn- mixed-bytes! [p g f]
+  (ffi/write p :double g 0)
+  (ffi/write p :float f 8)
   p)
 
 (defn- grid-bytes! [p xs]
@@ -329,7 +338,8 @@
 (def ^:private e2e-form
   '(do
      (require '[jolt.ffi :as ffi])
-     (ffi/load-library {:darwin "goose/libexport_abi.dylib"})
+     (ffi/load-library {:darwin "goose/libexport_abi.dylib"
+                        :linux "goose/libexport_abi.so"})
      (ffi/defcfn gi "goose_init" [:int :pointer] :void)
      (ffi/defcfn gtr "goose_vm_try_run" [[:by-value [:struct [[:data :pointer] [:len :int64]]]]] :int64)
      (ffi/defcfn gla "goose_vm_last_abort" [:pointer] :pointer)
@@ -415,14 +425,14 @@
   (testing "flat fixed-size values by value"
     (check "Pair packed" 103
            #(ffi/with-arena [a] (pair-sum (pair-bytes! (ffi/alloc a pair-size) 3 100))))
-    (is (not= 103 (ffi/with-arena [a]
-                   (let [p (ffi/alloc a 16)]
-                     (ffi/write p :int32 3 0)
-                     (ffi/write p :int64 100 8)
-                     (pair-sum-aligned p))))
-        "Jolt's natural layout must NOT match goose's packed struct")
+    (is (not= [7 900] (ffi/with-arena [a]
+                        ;; a packed Pair read back at natural offsets
+                        (let [buf (ffi/alloc a 16)]
+                          (pair-make buf 7 900)
+                          [(ffi/read buf :int32 0) (ffi/read buf :int64 8)])))
+        "Jolt's natural offsets must NOT match goose's packed struct")
     (check "Mixed packed" 3.75
-           #(ffi/with-arena [a] (mixed-sum (mixed-bytes! (ffi/alloc a 12) 1.5 2.25))))
+           #(ffi/with-arena [a] (mixed-sum (mixed-bytes! (ffi/alloc a 12) 2.25 1.5))))
     (check "i32[4]" 10 #(ffi/with-arena [a]
                           (arr-sum (grid-bytes! (ffi/alloc a grid-size) [1 2 3 4]))))
     (check "i32[..4] len 4" 10 #(ffi/with-arena [a]
@@ -483,8 +493,8 @@
            #(ffi/with-arena [a]
               (let [base (ffi/alloc a 24)]
                 (pair-bytes! base 3 100)
-                (ffi/write base :int32 4 12)
-                (ffi/write base :int64 200 16)
+                (ffi/write base :int64 200 12)
+                (ffi/write base :int32 4 20)
                 (pair-sum-of (slice-of a base 2)))))
     (check "Color[:]" 2
            #(ffi/with-arena [a]

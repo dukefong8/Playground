@@ -230,8 +230,20 @@ export "sc_fixed_array" fn fixed_array(n: i64) -> i64 {
 
 // --- flat fixed-size values
 
-struct Pair  { a: i32, b: i64 }     // padding between a and b
-struct Mixed { f: f32, g: f64 }     // and between f and g
+struct Pair  { b: i64, a: i32 }     // fields sit where C would place them:
+                                    // b at 0, a at 8, packed size 12. In the
+                                    // other order (a: i32, b: i64) b lands at
+                                    // 4, C passes the struct on the stack, and
+                                    // a host passing it in registers (as for
+                                    // every small struct) reads garbage. See
+                                    // reference §24: structs cross by value
+                                    // only when the fields already sit where
+                                    // C would place them.
+struct Mixed { g: f64, f: f32 }     // same rule, and the float member needs
+                                    // real field types on the host (SSE
+                                    // classification): a :uint8 run would go
+                                    // in general-purpose registers while C
+                                    // reads XMM.
 struct Grid  { cells: i32[4] }      // a struct holding a fixed array
 
 enum Color { Red, Green, Blue }     // fixed-mode enum without fields
@@ -255,7 +267,7 @@ export "abi_not"  fn e_not(b: bool) -> bool { return !b; }
 // --- flat fixed-size values, by value
 
 export "abi_pair_make" fn e_pair_make(a: i32, b: i64) -> Pair {
-    return Pair { a: a, b: b };
+    return Pair { b: b, a: a };
 }
 export "abi_pair_sum" fn e_pair_sum(p: Pair) -> i64 {
     return p.a + p.b;
