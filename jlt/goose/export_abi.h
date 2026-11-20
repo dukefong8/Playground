@@ -94,14 +94,14 @@ typedef struct { gs_i64 *data; int64_t len; } sl_i64;
 
 typedef struct Pair_g Pair_g;
 struct Pair_g {
-    int32_t a_g;
     int64_t b_g;
+    int32_t a_g;
 };
 
 typedef struct Mixed_g Mixed_g;
 struct Mixed_g {
-    float f_g;
     double g_g;
+    float f_g;
 };
 
 typedef struct { int32_t e[4]; } a4_i32;

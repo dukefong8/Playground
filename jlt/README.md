@@ -12,10 +12,11 @@ Run the test suite JIT (the task explicitly enables Guardrails):
 jolt test
 ```
 
-Expected result: `Ran 141 tests. 838 assertions passed, 0 failures, 0 errors.`
-That covers the Guardrails and Truss tests plus the `superv.async` and
+Expected result: `Ran 146 tests. 920 assertions passed, 0 failures, 0 errors.`
+That covers the Guardrails and Truss tests, the `superv.async` and
 `partial-cps` integrations this project adds on top of them — see
-[superv.async on Jolt](#supervasync-on-jolt).
+[superv.async on Jolt](#supervasync-on-jolt) — and the goose export-ABI
+suite in `test/goose/export_abi.clj`.
 
 To build the optimized binary without Guardrails, run the opt task
 (`GUARDRAILS_ENABLED=false`, `jolt.opt-runner`, `--opt`):
@@ -24,7 +25,7 @@ To build the optimized binary without Guardrails, run the opt task
 jolt opt
 ```
 
-Expected result: `Ran 99 tests. 689 assertions passed, 0 failures, 0 errors.`
+Expected result: `Ran 104 tests. 771 assertions passed, 0 failures, 0 errors.`
 Guardrails-specific behavior specs are excluded in this mode, along with the
 bootstrap, shim, and dep-loading tests that require Guardrails namespaces —
 those sources break Jolt's `--opt` DCE reader, so the opt runner leaves
