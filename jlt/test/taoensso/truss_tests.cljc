@@ -60,12 +60,16 @@
      (is (=       (truss/ex-chain :as-map ex2) [ex2-map ex1-map]))
      (is
        #?(:jolt
+          ;; Truss omits :trace when .getStackTrace is empty. Jolt documented
+          ;; that as always empty; from 0.8.27 it returns a frame for an
+          ;; exception built inside a function body (a deftest is one), so
+          ;; :trace is usually present now. Accept either, and check the shape
+          ;; when it is.
           ;; https://jolt-lang.net/docs/host-interop.html#what-s-shimmed
-          ;; Jolt documents .getStackTrace as empty, so Truss has no :trace to
-          ;; include in the normalized exception map.
           (let [m (truss/ex-map ex2)]
             (and (submap? m (assoc ex1-map :chain [ex2-map ex1-map]))
-                 (not (contains? m :trace))))
+                 (or (not (contains? m :trace))
+                     (vector? (force (:trace m))))))
 
           :default
           (submap? (truss/ex-map ex2)

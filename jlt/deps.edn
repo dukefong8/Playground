@@ -1,6 +1,9 @@
 {:paths ["src"]
 
- :jolt/min-version "0.8.6"
+ ;; The suite runs against a Jolt that already ships the core.async overlay
+ ;; (alt!/alt!!, impl.protocols) and populates .getStackTrace; 0.8.27 is the
+ ;; version verified here.
+ :jolt/min-version "0.8.27"
 
  ;; fulcro-spec's :bb branches avoid JVM-only ClojureScript test machinery.
  :jolt/features [:bb]
@@ -17,6 +20,11 @@
 
         org.clojure/data.json
         {:mvn/version "2.5.2"}
+
+        io.github.jolt-lang/time
+        {:git/url "https://github.com/jolt-lang/time.git"
+         :git/tag "v0.0.18"
+         :git/sha "ec750bbe1f02050389258292bcc35b95b9eca756"}
 
         jolt-lang/transit-jolt
         {:git/url "https://github.com/jolt-lang/transit-jolt"
@@ -46,22 +54,16 @@
         metosin/malli
         {:mvn/version "0.20.1"}
 
-        io.github.jolt-lang/time
-        {:git/url "https://github.com/jolt-lang/time.git"
-         :git/tag "v0.0.9"
-         :git/sha "abeee49974c2c4efa2fa75c96d9a379822c6815f"}
-
-        superv.async/superv.async
-        {:local/root "../../superv.async"}
+        org.replikativ/superv.async
+        {:mvn/version "0.3.56"}
 
         is.simm/partial-cps
-        {:local/root "../../partial-cps"}}
+        {:mvn/version "0.1.66"}}
 
- :aliases {;; superv.async's and partial-cps's own suites ride along on the test
-           ;; path, so one run covers them.
-           :test {:extra-paths ["test"
-                                "../../superv.async/test"
-                                "../../partial-cps/test"]
+ :aliases {;; superv.async and partial-cps ship their sources from Clojars, but
+           ;; their own suites are not in the jars, so the test path is just
+           ;; this project's tests.
+           :test {:extra-paths ["test"]
                    ;; NOTE: the `aot` branch comments this out too (fulcro-spec
                    ;; core pulls guardrails back in).
                     :extra-deps {fulcrologic/fulcro-spec
@@ -78,14 +80,17 @@
   ;; Guardrails disabled (GUARDRAILS_ENABLED defaults to false, set explicitly
   ;; here). bench is otherwise unrelated to opt: it profiles the core.async
   ;; backends with tufte and is observational — see jolt.bench-runner.
-  :tasks {test  "JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true ./jolt -M:test"
-          opt   "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.opt-runner -o target/release/jlt-opt --opt && ./target/release/jlt-opt"
+  :tasks {;; goose exports are tested in test/goose/export_abi.clj. Build the
+          ;; combined library as a task so the test namespaces only bind it.
+          goose-lib "goose build --shared --header goose/export_abi.h goose/export_abi.goose"
+          test  "jolt goose-lib && JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true jolt -M:test"
+          opt   "jolt goose-lib && JOLT_AOT_CACHE=0 jolt -A:test build -m jolt.opt-runner -o target/release/jlt-opt --opt && ./target/release/jlt-opt"
           ;; Thread-vs-fiber async benchmarking (tufte). Builds --opt, then runs
           ;; the binary — which takes the four numbers directly ([n k reps loops],
           ;; defaults 200 50 5 10) and --b-only for the microbenchmark layer alone.
-          ;; Jolt's :tasks do NOT forward extra CLI args, so `./jolt bench 100 50 3`
+          ;; Jolt's :tasks do NOT forward extra CLI args, so `jolt bench 100 50 3`
           ;; silently runs the defaults; build once, then invoke the binary for
           ;; other sizes:
           ;;   ./target/release/jlt-bench 100 50 3 5
           ;;   ./target/release/jlt-bench --b-only
-          bench "JOLT_AOT_CACHE=0 ./jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt && ./target/release/jlt-bench"}}
+          bench "JOLT_AOT_CACHE=0 jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt && ./target/release/jlt-bench"}}

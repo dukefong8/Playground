@@ -24,12 +24,12 @@
         layer's own header for the cells and why concurrency is required.
 
   Run:
-    ./jolt bench                                   ; task, both layers, defaults
-    ./jolt -A:test -m jolt.bench-runner 200 50 10       ; n=200 k=50 reps=10
-    ./jolt -A:test -m jolt.bench-runner --b-only        ; microbenchmark only
+    jolt bench                                   ; task, both layers, defaults
+    jolt -A:test -m jolt.bench-runner 200 50 10       ; n=200 k=50 reps=10
+    jolt -A:test -m jolt.bench-runner --b-only        ; microbenchmark only
 
   Jolt's :tasks do not forward extra CLI args, so n/k/reps and --b-only only
-  take effect through the raw `-m` form above; `./jolt bench <args>` silently
+  take effect through the raw `-m` form above; `jolt bench <args>` silently
   runs the defaults.
 
   tufte's `format-pstats` cannot run on Jolt yet: it routes through

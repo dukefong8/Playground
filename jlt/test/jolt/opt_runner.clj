@@ -9,41 +9,29 @@
   (:require [clojure.test :as test]
             [jolt.guardrails.bootstrap]
             [babashka.pod.datalevin-test]
-            [superv.async-test]
             [jolt.superv-async-test]
             [jolt.superv-fibers-test]
             [jolt.superv-partial-cps-fibers-test]
-            [is.simm.partial-cps.async-test]
-            [is.simm.partial-cps.core-test]
-            [is.simm.partial-cps.for-async-test]
-            [is.simm.partial-cps.iteration-test]
-            [is.simm.partial-cps.sequence-test]
-            [is.simm.partial-cps.core-async-test]
             [jolt.partial-cps-core-async-test]
             [jolt.partial-cps-fibers-test]
             [jolt.superv-cps-test]
             [jolt.partial-cps-runtime-test]
             [babashka.pod-test]
-            [taoensso.truss-tests]))
+            [taoensso.truss-tests]
+            [goose.export-abi]))
 
 (def test-namespaces
   '[babashka.pod.datalevin-test
     babashka.pod-test
-    superv.async-test
     jolt.superv-async-test
     jolt.superv-fibers-test
     jolt.superv-partial-cps-fibers-test
-    is.simm.partial-cps.async-test
-    is.simm.partial-cps.core-test
-    is.simm.partial-cps.for-async-test
-    is.simm.partial-cps.iteration-test
-    is.simm.partial-cps.sequence-test
-    is.simm.partial-cps.core-async-test
     jolt.partial-cps-core-async-test
     jolt.partial-cps-fibers-test
     jolt.superv-cps-test
     jolt.partial-cps-runtime-test
-    taoensso.truss-tests])
+    taoensso.truss-tests
+    goose.export-abi])
 
 (defn -main
   "Run the guardrails-free suite (the opt gate). With namespace args runs

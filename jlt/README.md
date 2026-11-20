@@ -9,21 +9,22 @@ Jolt. Guardrails tests come from upstream tag
 Run the test suite JIT (the task explicitly enables Guardrails):
 
 ```sh
-./jolt test
+jolt test
 ```
 
-Expected result: `Ran 331 tests. 1115 assertions passed, 0 failures, 0 errors.`
-That covers the Guardrails and Truss tests plus `superv.async`'s own suite,
-which rides along on the test path — see [superv.async on Jolt](#supervasync-on-jolt).
+Expected result: `Ran 141 tests. 838 assertions passed, 0 failures, 0 errors.`
+That covers the Guardrails and Truss tests plus the `superv.async` and
+`partial-cps` integrations this project adds on top of them — see
+[superv.async on Jolt](#supervasync-on-jolt).
 
 To build the optimized binary without Guardrails, run the opt task
 (`GUARDRAILS_ENABLED=false`, `jolt.opt-runner`, `--opt`):
 
 ```sh
-./jolt opt
+jolt opt
 ```
 
-Expected result: `Ran 289 tests. 966 assertions passed, 0 failures, 0 errors.`
+Expected result: `Ran 99 tests. 689 assertions passed, 0 failures, 0 errors.`
 Guardrails-specific behavior specs are excluded in this mode, along with the
 bootstrap, shim, and dep-loading tests that require Guardrails namespaces —
 those sources break Jolt's `--opt` DCE reader, so the opt runner leaves
@@ -37,7 +38,7 @@ ensures the test configuration takes effect without deleting the shared cache.
 
 ## Profiling the async backends
 
-`./jolt bench` builds an optimized binary with `--opt` and runs it, so the
+`jolt bench` builds an optimized binary with `--opt` and runs it, so the
 numbers it reports are the compiled ones. The two tasks above are unrelated:
 `bench` profiles Jolt's two go-block backends — `:thread` (the default) and
 `:fiber` — with [tufte](https://github.com/taoensso/tufte). The selector is
@@ -47,16 +48,16 @@ spawns, including ones inside functions it calls. `thread`/`io-thread` fix their
 carrier at the call site and ignore the var, so they are out of scope.
 
 ```sh
-./jolt bench
+jolt bench
 ```
 
 Defaults are `200` go-blocks × `50` park cycles, `5` reps, `10` loops. Jolt's
-`:tasks` do **not** forward extra CLI args — `./jolt bench 100 50 3` silently
+`:tasks` do **not** forward extra CLI args — `jolt bench 100 50 3` silently
 runs the defaults, and rebuilds first. To vary the workload, build once and
 invoke the binary directly, which takes the numbers as ordinary arguments:
 
 ```sh
-./jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt
+jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt
 ./target/release/jlt-bench 100 50 3 5   # [n k reps loops]
 ./target/release/jlt-bench --b-only     # microbenchmark layer only
 ```
@@ -82,7 +83,7 @@ Three layers, printed in this order:
 
 `bench` is **observational, not a gate**. Its `-main` always exits `0` and never
 inspects `clojure.test` counters, so layer (a) will happily run a failing test
-without failing the run. `./jolt opt` is the gate.
+without failing the run. `jolt opt` is the gate.
 
 Layer (a) enumerates test vars at run time, so its rows follow whatever is on
 disk — editing one of those three suites changes the table without changing the
@@ -99,7 +100,7 @@ namespace. Guardrails is disabled by default; enable it with
 `GUARDRAILS_ENABLED`:
 
 ```sh
-./jolt test
+jolt test
 ```
 
 An unset, empty, or `false` value clears the property. Guardrails treats
@@ -108,16 +109,11 @@ value for production ClojureScript builds.
 
 ## superv.async on Jolt
 
-`superv.async` is declared as a `:local/root` dependency and runs on Jolt
-unmodified — no project-local shim and no `:jolt/replaces`. Its suite is on the
-`:test` alias's `:extra-paths`, so `./jolt test` covers it along with everything
-else — 28 tests and 45 assertions of the 331 and 1115 above. That is the same
-tally it reports on a JVM, so the port is not merely loading:
-
-```sh
-cd ../../superv.async && clojure -Sdeps '{:paths ["src" "test"]}' -M \
-  -e "(require 'superv.async-test) (clojure.test/run-tests 'superv.async-test)"
-```
+`superv.async` comes from Clojars (`org.replikativ/superv.async`) and runs on
+Jolt unmodified — no project-local shim and no `:jolt/replaces`. The published
+jar carries sources only, so the library's own suite does not ride along on the
+test path: `jolt test` covers the integration this project adds, which is the
+half that needs checking here.
 
 What lets it run is two pieces of upstream `core.async`'s surface that Jolt did
 not ship, now implemented in its stdlib instead of worked around per project:
@@ -132,20 +128,21 @@ not ship, now implemented in its stdlib instead of worked around per project:
 
 A bare `(require 'clojure.core.async)` installs both — the overlay's ns form
 requires the protocols namespace, as upstream's does — so nothing has to
-remember an ordering. Jolt 0.8.6 and earlier do not have them; this runs against
-a Jolt built from `main` after the core.async work landed.
+remember an ordering. Jolt 0.8.6 and earlier do not have them; this needs a Jolt
+release that ships the core.async work (0.8.27 is the version verified here).
 
-`test/jolt/superv_async_test.clj` adds 20 more tests and 47 assertions for the
-parts of its public API that suite never reaches — the blocking twins, the
-callback ops, the exception-tracking protocol, the supervisor constructors, and
-the channel plumbing (`tap`, `sub`, `engulf`, `debounce>>`). That file is
-deliberately portable so the same one runs on a JVM, which is the point of it: a
-case that passes there and fails here is a port divergence, and one that fails on
-both is an upstream bug. Run it against the oracle with:
+`test/jolt/superv_async_test.clj` adds 20 tests and 47 assertions for the parts
+of the public API that the library's own suite never reaches — the blocking
+twins, the callback ops, the exception-tracking protocol, the supervisor
+constructors, and the channel plumbing (`tap`, `sub`, `engulf`, `debounce>>`).
+That file is deliberately portable so the same one runs on a JVM, which is the
+point of it: a case that passes there and fails here is a port divergence, and
+one that fails on both is an upstream bug. Run it against the oracle (from this
+directory) with:
 
 ```sh
-cd ../../superv.async && clojure -Sdeps \
-  '{:paths ["src" "/Users/duke/dev/Playground/jlt/test"]}' -M \
+clojure -Sdeps \
+  '{:deps {org.replikativ/superv.async {:mvn/version "0.3.56"}} :paths ["test"]}' -M \
   -e "(require 'jolt.superv-async-test) (clojure.test/run-tests 'jolt.superv-async-test)"
 ```
 
