@@ -1,8 +1,8 @@
-{-# LANGUAGE BlockArguments        #-}
-{-# LANGUAGE GHC2024               #-}
-{-# LANGUAGE NoFieldSelectors      #-}
-{-# LANGUAGE OverloadedRecordDot   #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE GHC2024             #-}
+{-# LANGUAGE NoFieldSelectors    #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE OverloadedStrings   #-}
 module Todo.Handler
   ( getTodosPage
   , getTodoListPartial
@@ -17,10 +17,10 @@ module Todo.Handler
 
 import Data.Text qualified as T
 
+import Network.HTTP.Types (status404)
 import Service.Hasql
 import Service.Http (RouteHandler, runDbOr500, throwRouteError)
 import Service.Logger
-import Network.HTTP.Types (status404)
 import Todo.Db
 import Todo.Generate (runGenerateTodoTitles)
 import Todo.Type
