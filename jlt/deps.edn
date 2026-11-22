@@ -82,7 +82,7 @@
   ;; backends with tufte and is observational — see jolt.bench-runner.
   :tasks {;; goose exports are tested in test/goose/export_abi.clj. Build the
           ;; combined library as a task so the test namespaces only bind it.
-          goose-lib "goose build --shared --header goose/export_abi.h goose/export_abi.goose"
+          goose-lib "goose build --shared --header ../goose/export_abi.h ../goose/export_abi.goose"
           test  "jolt goose-lib && JOLT_AOT_CACHE=0 GUARDRAILS_ENABLED=true jolt -M:test"
           opt   "jolt goose-lib && JOLT_AOT_CACHE=0 jolt -A:test build -m jolt.opt-runner -o target/release/jlt-opt --opt && ./target/release/jlt-opt"
           ;; Thread-vs-fiber async benchmarking (tufte). Builds --opt, then runs

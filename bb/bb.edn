@@ -7,6 +7,8 @@
 
         cheshire/cheshire          {:mvn/version "RELEASE"}
         org.babashka/cli           {:mvn/version "RELEASE"}
+        org.babashka/ffi           {:mvn/version "0.1.3"}
+        org.clojure/core.async     {:mvn/version "1.8.741"}
 
         dev.data-star.clojure/sdk {:mvn/version "RELEASE"}
         dev.data-star.clojure/http-kit {:mvn/version "RELEASE"}
@@ -14,4 +16,14 @@
         io.github.tonsky/clj-simple-router {:mvn/version "RELEASE"}
         ring/ring-core {:mvn/version "RELEASE"}}
 
- :pods {huahaiy/datalevin {:version "1.0.0"}}}
+ :pods {huahaiy/datalevin {:version "1.0.0"}}
+
+ ;; goose export-ABI suite: ../goose/export_abi.goose is built as one shared
+ ;; library (goose_init resolves to the first library loaded), then the tests
+ ;; bind it from test/goose/export_abi.clj.
+ :tasks {goose-lib (shell "goose" "build" "--shared"
+                          "--header" "../goose/export_abi.h"
+                          "../goose/export_abi.goose")
+         goose-test (do
+                      (shell "bb" "goose-lib")
+                      (shell "bb" "-cp" "test:src:." "-e" "(require 'clojure.test 'goose.export-abi) (let [{:keys [fail error]} (clojure.test/run-tests 'goose.export-abi)] (System/exit (if (pos? (+ fail error)) 1 0)))"))}}
