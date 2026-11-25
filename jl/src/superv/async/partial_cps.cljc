@@ -19,7 +19,7 @@
   Portability: everything here is built from portable constructs (go, alts!,
   ex-info) and runs on the JVM, in CLJS, and on either Jolt backend.
 
-  This namespace lives in jlt (not in superv.async itself) so the tests it
+  This namespace lives in jl (not in superv.async itself) so the tests it
   supports are self-contained: it needs partial-cps on the classpath, which
   only test consumers have. Base superv.async users never touch it.
 

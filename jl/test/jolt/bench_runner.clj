@@ -51,7 +51,7 @@
             ;; top-level (require ...) is invisible to AOT/DCE, so under
             ;; `build -m jolt.bench-runner --opt` the namespaces would not be compiled
             ;; into the binary, run-tests would find no vars, and every row would
-            ;; read "Ran 0 tests". Same trap jlt/b2afec3 records for the runner.
+            ;; read "Ran 0 tests". Same trap jl/b2afec3 records for the runner.
             [jolt.superv-async-test]
             [jolt.superv-cps-test]
             [jolt.partial-cps-core-async-test]))

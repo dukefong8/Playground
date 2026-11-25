@@ -58,9 +58,9 @@ runs the defaults, and rebuilds first. To vary the workload, build once and
 invoke the binary directly, which takes the numbers as ordinary arguments:
 
 ```sh
-jolt -A:test build -m jolt.bench-runner -o target/release/jlt-bench --opt
-./target/release/jlt-bench 100 50 3 5   # [n k reps loops]
-./target/release/jlt-bench --b-only     # microbenchmark layer only
+jolt -A:test build -m jolt.bench-runner -o target/release/jl-bench --opt
+./target/release/jl-bench 100 50 3 5   # [n k reps loops]
+./target/release/jl-bench --b-only     # microbenchmark layer only
 ```
 
 Three layers, printed in this order:

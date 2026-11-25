@@ -18,12 +18,12 @@
 
  :pods {huahaiy/datalevin {:version "1.0.0"}}
 
- ;; goose export-ABI suite: ../goose/export_abi.goose is built as one shared
+ ;; goose export-ABI suite: ../gs/export_abi.goose is built as one shared
  ;; library (goose_init resolves to the first library loaded), then the tests
  ;; bind it from test/goose/export_abi.clj.
  :tasks {goose-lib (shell "goose" "build" "--shared"
-                          "--header" "../goose/export_abi.h"
-                          "../goose/export_abi.goose")
+                          "--header" "../gs/export_abi.h"
+                          "../gs/export_abi.goose")
          goose-test (do
                       (shell "bb" "goose-lib")
                       (shell "bb" "-cp" "test:src:." "-e" "(require 'clojure.test 'goose.export-abi) (let [{:keys [fail error]} (clojure.test/run-tests 'goose.export-abi)] (System/exit (if (pos? (+ fail error)) 1 0)))"))}}

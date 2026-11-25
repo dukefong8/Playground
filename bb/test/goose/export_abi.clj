@@ -1,12 +1,12 @@
 (ns goose.export-abi
-  "Babashka port of `jlt/test/goose/export_abi.clj`: the same five suites over
+  "Babashka port of `jl/test/goose/export_abi.clj`: the same five suites over
   the goose export ABI, driven through `babashka.ffi`.
 
-  The three goose samples are combined into `../goose/export_abi.goose` and
+  The three goose samples are combined into `../gs/export_abi.goose` and
   built as ONE dylib by the `goose-lib` task, because goose_init resolves to
   the first library loaded in a process.
 
-  Every type's C shape comes from the generated `../goose/export_abi.h`, which
+  Every type's C shape comes from the generated `../gs/export_abi.h`, which
   wraps all types in `#pragma pack(push, 1)`. babashka.ffi layouts use natural
   alignment and cannot express packing, so a packed value crosses as a run of
   :uint8 fields at byte offsets. The exception is `Mixed`, whose register
@@ -49,8 +49,8 @@
       {:exit exit :out (str @(:out proc) @(:err proc))})))
 
 (def ^:private lib
-  (ffi/load-library {:mac "../goose/libexport_abi.dylib"
-                     :linux "../goose/libexport_abi.so"}))
+  (ffi/load-library {:mac "../gs/libexport_abi.dylib"
+                     :linux "../gs/libexport_abi.so"}))
 
 (defn- cfn [c-name argtypes ret] (ffi/cfn lib c-name argtypes ret))
 
@@ -312,8 +312,8 @@
 (def ^:private host-init-form
   '(do
      (require '[babashka.ffi :as ffi] '[clojure.core.async :as a])
-     (def lib (ffi/load-library {:mac "../goose/libexport_abi.dylib"
-                                 :linux "../goose/libexport_abi.so"}))
+     (def lib (ffi/load-library {:mac "../gs/libexport_abi.dylib"
+                                 :linux "../gs/libexport_abi.so"}))
      (defn cfn [n args ret] (ffi/cfn lib n args ret))
      (def init (cfn "goose_init" [:int :pointer] :void))
      (def exit (cfn "goose_exit" [] :void))
@@ -347,8 +347,8 @@
 (def ^:private owner-init-form
   '(do
      (require '[babashka.ffi :as ffi])
-     (def lib (ffi/load-library {:mac "../goose/libexport_abi.dylib"
-                                 :linux "../goose/libexport_abi.so"}))
+     (def lib (ffi/load-library {:mac "../gs/libexport_abi.dylib"
+                                 :linux "../gs/libexport_abi.so"}))
      (defn cfn [n args ret] (ffi/cfn lib n args ret))
      (def init (cfn "goose_init" [:int :pointer] :void))
      (def exit (cfn "goose_exit" [] :void))
@@ -377,8 +377,8 @@
 (def ^:private foreign-init-form
   '(do
      (require '[babashka.ffi :as ffi])
-     (def lib (ffi/load-library {:mac "../goose/libexport_abi.dylib"
-                                 :linux "../goose/libexport_abi.so"}))
+     (def lib (ffi/load-library {:mac "../gs/libexport_abi.dylib"
+                                 :linux "../gs/libexport_abi.so"}))
      (defn cfn [n args ret] (ffi/cfn lib n args ret))
      (def init (cfn "goose_init" [:int :pointer] :void))
      (def stack (cfn "sc_sum_stack" [:int64] :int64))
@@ -397,8 +397,8 @@
 
 (def ^:private fault-form
   (str "(do (require '[babashka.ffi :as ffi] '[clojure.core.async :as a])"
-       " (def lib (ffi/load-library {:mac \"../goose/libexport_abi.dylib\""
-       " :linux \"../goose/libexport_abi.so\"}))"
+       " (def lib (ffi/load-library {:mac \"../gs/libexport_abi.dylib\""
+       " :linux \"../gs/libexport_abi.so\"}))"
        " ((ffi/cfn lib \"goose_init\" [:int :pointer] :void) 0 ffi/null)"
        " (def call (fn [] ((ffi/cfn lib \"%s\" [:int64] :int64) %d)))"
        " (defn attempt [f] (try (f) (catch Throwable e e)))"
@@ -455,8 +455,8 @@
 (def ^:private e2e-form
   '(do
      (require '[babashka.ffi :as ffi])
-     (def lib (ffi/load-library {:mac "../goose/libexport_abi.dylib"
-                                 :linux "../goose/libexport_abi.so"}))
+     (def lib (ffi/load-library {:mac "../gs/libexport_abi.dylib"
+                                 :linux "../gs/libexport_abi.so"}))
      (def gi (ffi/cfn lib "goose_init" [:int :pointer] :void))
      (def gtr (ffi/cfn lib "goose_vm_try_run" [[:struct [[:data :pointer] [:len :int64]]]] :int64))
      (def gla (ffi/cfn lib "goose_vm_last_abort" [:pointer] :pointer))

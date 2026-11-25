@@ -4,10 +4,10 @@
   end-to-end drive. `test/goose/export_abi.clj` is the only test/probe file.
 
   goose_init resolves to the first library loaded in a process, so the three
-  goose samples are combined into `../goose/export_abi.goose` and built as ONE
+  goose samples are combined into `../gs/export_abi.goose` and built as ONE
   dylib by the `goose-lib` task, which `jolt test` and `jolt opt` run first.
 
-  Every type's C shape comes from the generated `../goose/export_abi.h`; the
+  Every type's C shape comes from the generated `../gs/export_abi.h`; the
   header wraps all types in `#pragma pack(push, 1)`, while jolt.ffi/layout
   does not model packing. Packed values therefore usually cross as runs of
   :uint8 with fields at byte offsets, not as natural Jolt layouts — except
@@ -63,8 +63,8 @@
           code (.waitFor p)]
       {:exit code :out out})))
 
-(ffi/load-library {:darwin "../goose/libexport_abi.dylib"
-                   :linux  "../goose/libexport_abi.so"})
+(ffi/load-library {:darwin "../gs/libexport_abi.dylib"
+                   :linux  "../gs/libexport_abi.so"})
 
 ;; ------------------------------------------------------------------
 ;; Bindings. All three samples share this one goose_init.
@@ -338,8 +338,8 @@
 (def ^:private e2e-form
   '(do
      (require '[jolt.ffi :as ffi])
-     (ffi/load-library {:darwin "../goose/libexport_abi.dylib"
-                        :linux "../goose/libexport_abi.so"})
+     (ffi/load-library {:darwin "../gs/libexport_abi.dylib"
+                        :linux "../gs/libexport_abi.so"})
      (ffi/defcfn gi "goose_init" [:int :pointer] :void)
      (ffi/defcfn gtr "goose_vm_try_run" [[:by-value [:struct [[:data :pointer] [:len :int64]]]]] :int64)
      (ffi/defcfn gla "goose_vm_last_abort" [:pointer] :pointer)

@@ -1,14 +1,14 @@
 # goose export ABI + thread interop matrix (bb)
 
-Port of `jlt/test/goose/export_abi.clj`, driven through `babashka.ffi`
+Port of `jl/test/goose/export_abi.clj`, driven through `babashka.ffi`
 (`org.babashka/ffi 0.1.3`, `org.clojure/core.async 1.8.741`).
-Library: `../goose/export_abi.goose` built as ONE dylib by `bb goose-lib`
+Library: `../gs/export_abi.goose` built as ONE dylib by `bb goose-lib`
 (`goose_init` resolves to the first library loaded in a process).
 
 Run: `bb goose-test` from `bb/`. Last verified: `Ran 6 tests containing
 121 assertions. 0 failures, 0 errors.` (twice, identical).
 
-## 1. ABI shapes (`export_abi.clj:80-120`, `goose/export_abi.goose:231-381`)
+## 1. ABI shapes (`export_abi.clj:80-120`, `gs/export_abi.goose:231-381`)
 
 `export_abi.h` wraps every type in `#pragma pack(push, 1)`. bb layouts use
 natural alignment, so a packed value crosses as a run of `:uint8` fields at
@@ -105,9 +105,9 @@ Go blocks and virtual threads coordinate with the init thread over
 host-side channels; the init thread alone drives goose, and goose children
 resolve into plain return values before anything crosses to bb.
 
-## 6. jlt vs bb (`jlt/test/goose/export_abi.clj` vs `bb/test/goose/export_abi.clj`)
+## 6. jl vs bb (`jl/test/goose/export_abi.clj` vs `bb/test/goose/export_abi.clj`)
 
-- jlt: `Ran 5 tests containing 82 assertions. 0 failures, 0 errors.`
+- jl: `Ran 5 tests containing 82 assertions. 0 failures, 0 errors.`
   (`jolt -A:test -m jolt.test-runner goose.export-abi`)
 - bb: `Ran 6 tests containing 121 assertions. 0 failures, 0 errors.`
   (`bb goose-test`)
@@ -117,7 +117,7 @@ shapes, T& / T[:] / results, the 8 rejects + 2 accepts, and the nREPL
 assertions (`:e2e-ok 5`, abort message, `:e2e-after 5`, server `out: 5`)
 match. Deltas are host adaptations plus bb-only thread coverage:
 
-| area | jlt | bb |
+| area | jl | bb |
 |---|---|---|
 | u64 | BigInt `18000000000000000000N` round-trips | signed-long bit pattern `-446744073709551616` (no unsigned long) |
 | struct/enum results | leading out-pointer buffer arg | native map return, written into a buffer to read |
